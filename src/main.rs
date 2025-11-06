@@ -18,7 +18,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use which::which;
 
-const VERSION: &str = "0.0.2.3v";
+const VERSION: &str = "0.0.2.5v";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
@@ -772,9 +772,9 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
             let prefetch_command = format!(
                 "set -euo pipefail\n\
                  mkdir -p ./{0}\n\
-                 {1} {0} --max-size 100G --output-directory ./{0}\n\
-                 {2} -e 20 -O ./{0} ./{0}\n\
-                 {3} -p 20 ./{0}/*.fastq",
+                 {1} {0} --max-size 400G --output-directory ./{0}\n\
+                 {2} -e 20 ./{0}/{0} \n\
+                 {3} -p 20 {0}_*.fastq",
                 run_acc,                 // {0}
                 prefetch.display(),      // {1}
                 fasterq_dump.display(),  // {2}
