@@ -4,7 +4,7 @@
 
 EBIDownload is a command-line tool developed in Rust for efficiently downloading sequencing data from the European Bioinformatics Institute (EBI) FTP server. This tool utilizes the [IBM Aspera CLI](https://www.ibm.com/aspera/connect/) for high-speed downloads and [pigz](https://zlib.net/pigz/) for parallel decompression, significantly improving data acquisition efficiency.
 
-![EBIDownload](./docs/EBIDownload.png)
+![EBIDownload](./docs/download.gif)
 
 ## Features
 

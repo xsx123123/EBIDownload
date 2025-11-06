@@ -2,7 +2,7 @@
 
 EBIDownload 是一个基于Rust开发的命令行工具, 用于高效地从欧洲生物信息学研究所 (EBI) 的FTP服务器下载测序数据。本工具通过调用 [IBM Aspera CLI](https://www.ibm.com/aspera/connect/) 实现高速下载, 并利用 [pigz](https://zlib.net/pigz/) 进行并行解压缩, 大大提升了数据获取的效率。
 
-![EBIDownload](./EBIDownload.png)
+![EBIDownload](./download.gif)
 
 ## 主要特性
 
