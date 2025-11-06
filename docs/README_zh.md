@@ -48,7 +48,7 @@ conda activate EBIDownload_env
 
 ```bash
 # 克隆仓库
-# git clone <your-repo-url>
+# git clone git@github.com:xsx123123/EBIDownload.git
 # cd EBIDownload
 
 # 编译开发版 (较快, 用于调试)
