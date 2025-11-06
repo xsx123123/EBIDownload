@@ -1,0 +1,14 @@
+/Users/zhangjian/zj_code_library/EBIDownload/target/release/deps/serde-75cca03602d65d89.d: /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/zhangjian/zj_code_library/EBIDownload/target/release/build/serde-2bd09da36ad10cba/out/private.rs
+
+/Users/zhangjian/zj_code_library/EBIDownload/target/release/deps/libserde-75cca03602d65d89.rlib: /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/zhangjian/zj_code_library/EBIDownload/target/release/build/serde-2bd09da36ad10cba/out/private.rs
+
+/Users/zhangjian/zj_code_library/EBIDownload/target/release/deps/libserde-75cca03602d65d89.rmeta: /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/zhangjian/zj_code_library/EBIDownload/target/release/build/serde-2bd09da36ad10cba/out/private.rs
+
+/Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/zhangjian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/zhangjian/zj_code_library/EBIDownload/target/release/build/serde-2bd09da36ad10cba/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/zhangjian/zj_code_library/EBIDownload/target/release/build/serde-2bd09da36ad10cba/out

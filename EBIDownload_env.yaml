@@ -67,5 +67,3 @@ dependencies:
   - perl-xml-sax-base=1.09=pl5321hd8ed1ab_0
   - sra-tools=3.2.1=h4304569_1
   - zstd=1.5.7=hb8e6e7a_2
-
-prefix: "/home/jzhang/.local/share/mamba/envs/ascp"
