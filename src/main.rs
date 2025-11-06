@@ -11,13 +11,14 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
-use which::which; // --- MODIFICATION: Added for pigz check ---
+use which::which;
 
-const VERSION: &str = "0.0.1v";
+const VERSION: &str = "0.0.2.2v";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
@@ -64,7 +65,6 @@ enum DownloadMethod {
     Prefetch,
 }
 
-// --- START MODIFICATION: Updated structs for new YAML format ---
 #[derive(Debug, Deserialize)]
 struct Config {
     software: SoftwarePaths,
@@ -82,7 +82,6 @@ struct SoftwarePaths {
 struct SettingPaths {
     openssh: PathBuf,
 }
-// --- END MODIFICATION ---
 
 #[derive(Debug, Deserialize, Serialize)]
 struct EnaRecord {
@@ -181,9 +180,7 @@ async fn main() -> Result<()> {
     setup_logging()?;
     print_banner();
 
-    // --- START MODIFICATION: Added pigz check early ---
     check_pigz_dependency().context("pigz dependency check failed")?;
-    // --- END MODIFICATION ---
 
     let filters = RegexFilters::new(&args)?;
     let config = load_config(&args.yaml).context("Failed to load YAML configuration")?;
@@ -448,21 +445,27 @@ async fn download_with_ftp(records: &[ProcessedRecord], args: &Args) -> Result<(
         urls.push(record.fastq_ftp_2_url.clone());
     }
 
-    // progress bars
-    let semaphore = Arc::new(Semaphore::new(args.multithreads)); // <-- Corrected this line
+    let semaphore = Arc::new(Semaphore::new(args.multithreads));
     let mp = Arc::new(MultiProgress::new());
     let mut bars: HashMap<String, ProgressBar> = HashMap::new();
     for url in &urls {
         let run = url.rsplit('/').next().unwrap_or("unknown").to_string();
         let pb = mp.add(ProgressBar::new(100));
-        pb.set_style(ProgressStyle::with_template("[{prefix}] {bar:40.cyan/blue} {percent:>3}% {msg}")?.progress_chars("##-"));
+        pb.set_style(
+            ProgressStyle::with_template(
+                "[{prefix}] {spinner} {bar:40.cyan/blue} {percent:>3}% {msg}",
+            )?
+            .progress_chars("##-")
+            .tick_chars("⠁⠁⠂⠂⠄⠄⡀⡀⢀⢀⠠⠠⠐⠐⠈⠈"),
+        );
         pb.set_prefix(run.clone());
+        // --- MODIFICATION: 添加 steady tick ---
+        pb.enable_steady_tick(Duration::from_millis(80));
         bars.insert(run, pb);
     }
 
     let (tx, mut rx) = mpsc::channel::<DlEvent>(1024);
 
-    // render task
     let mp_render = mp.clone();
     let mut bars_render = bars.clone();
     let render = tokio::spawn(async move {
@@ -514,27 +517,35 @@ async fn download_with_ftp(records: &[ProcessedRecord], args: &Args) -> Result<(
                 .arg("-lc")
                 .arg(&cmd)
                 .current_dir(&output_path)
-                .stdout(Stdio::null()) 
-                .stderr(Stdio::null()) 
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
                 .spawn();
 
-            let status;
+            let output;
             match spawn_result {
-                Ok(mut child) => {
-                    status = child.wait().await;
+                Ok(child) => {
+                    output = child.wait_with_output().await;
                 }
                 Err(e) => {
-                    status = Err(e);
+                    let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: format!("spawn failed: {}", e) }).await;
+                    return;
                 }
             }
 
-            match status {
-                Ok(s) if s.success() => {
+            match output {
+                Ok(out) if out.status.success() => {
                     let _ = tx.send(DlEvent::Stage { run: run_id.clone(), msg: "Verifying".into(), pct: 90 }).await;
                     let _ = tx.send(DlEvent::Done { run: run_id.clone() }).await;
                 }
-                Ok(s) => {
-                    let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: format!("exit {}", s) }).await;
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let last_error = stderr.lines().filter(|s| !s.trim().is_empty()).last().unwrap_or("No stderr output");
+                    let err_msg = format!(
+                        "exit {}. Error: {}",
+                        out.status,
+                        last_error.chars().take(200).collect::<String>()
+                    );
+                    let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: err_msg }).await;
                 }
                 Err(e) => {
                     let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: e.to_string() }).await;
@@ -571,8 +582,16 @@ async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: 
     for url in &urls {
         let run = url.rsplit('/').next().unwrap_or("unknown").to_string();
         let pb = mp.add(ProgressBar::new(100));
-        pb.set_style(ProgressStyle::with_template("[{prefix}] {bar:40.green/black} {percent:>3}% {msg}")?.progress_chars("##-"));
+        pb.set_style(
+            ProgressStyle::with_template(
+                "[{prefix}] {spinner} {bar:40.green/black} {percent:>3}% {msg}",
+            )?
+            .progress_chars("##-")
+            .tick_chars("⠁⠁⠂⠂⠄⠄⡀⡀⢀⢀⠠⠠⠐⠐⠈⠈"),
+        );
         pb.set_prefix(run.clone());
+        // --- MODIFICATION: 添加 steady tick ---
+        pb.enable_steady_tick(Duration::from_millis(80));
         bars.insert(run, pb);
     }
 
@@ -610,9 +629,7 @@ async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: 
         let output_path = args.output.clone();
         let only_scripts = args.only_scripts;
         let ascp = config.software.ascp.clone();
-        // --- START MODIFICATION: Use new config structure ---
         let openssh = config.setting.openssh.clone();
-        // --- END MODIFICATION ---
         let run_id = url.rsplit('/').next().unwrap_or("unknown").to_string();
 
         let task = tokio::spawn(async move {
@@ -639,26 +656,34 @@ async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: 
                 .arg("-lc")
                 .arg(&cmd)
                 .current_dir(&output_path)
-                .stdout(Stdio::null()) 
-                .stderr(Stdio::null()) 
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
                 .spawn();
 
-            let status;
+            let output;
             match spawn_result {
-                Ok(mut child) => {
-                    status = child.wait().await;
+                Ok(child) => {
+                    output = child.wait_with_output().await;
                 }
                 Err(e) => {
-                    status = Err(e);
+                    let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: format!("spawn failed: {}", e) }).await;
+                    return;
                 }
             }
 
-            match status {
-                Ok(s) if s.success() => {
+            match output {
+                Ok(out) if out.status.success() => {
                     let _ = tx.send(DlEvent::Done { run: run_id.clone() }).await;
                 }
-                Ok(s) => {
-                    let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: format!("exit {}", s) }).await;
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let last_error = stderr.lines().filter(|s| !s.trim().is_empty()).last().unwrap_or("No stderr output");
+                    let err_msg = format!(
+                        "exit {}. Error: {}",
+                        out.status,
+                        last_error.chars().take(200).collect::<String>()
+                    );
+                    let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: err_msg }).await;
                 }
                 Err(e) => {
                     let _ = tx.send(DlEvent::Fail { run: run_id.clone(), err: e.to_string() }).await;
@@ -682,20 +707,26 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
 
     let semaphore = Arc::new(Semaphore::new(args.multithreads));
 
-    // progress bars
     let mp = Arc::new(MultiProgress::new());
     let mut bars: HashMap<String, ProgressBar> = HashMap::new();
     for rec in records {
         let run = rec.run_accession.clone();
         let pb = mp.add(ProgressBar::new(100));
-        pb.set_style(ProgressStyle::with_template("[{prefix}] {bar:40.magenta/black} {percent:>3}% {msg}")?.progress_chars("##-"));
+        pb.set_style(
+            ProgressStyle::with_template(
+                "[{prefix}] {spinner} {bar:40.magenta/black} {percent:>3}% {msg}",
+            )?
+            .progress_chars("##-")
+            .tick_chars("⠁⠁⠂⠂⠄⠄⡀⡀⢀⢀⠠⠠⠐⠐⠈⠈"),
+        );
         pb.set_prefix(run.clone());
+        // --- MODIFICATION: 添加 steady tick ---
+        pb.enable_steady_tick(Duration::from_millis(80));
         bars.insert(run, pb);
     }
 
     let (tx, mut rx) = mpsc::channel::<DlEvent>(1024);
 
-    // render task
     let mp_render = mp.clone();
     let mut bars_render = bars.clone();
     let render = tokio::spawn(async move {
@@ -722,7 +753,6 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
         let _ = mp_render.clear();
     });
 
-    // spawn per record
     let mut tasks = Vec::new();
     for record in records {
         let sem = semaphore.clone();
@@ -732,28 +762,24 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
         let run_acc = record.run_accession.clone();
         let prefetch = config.software.prefetch.clone();
         let fasterq_dump = config.software.fasterq_dump.clone();
-        
-        // --- START MODIFICATION: Assume pigz is in PATH ---
-        // No longer read from config
         let pigz = PathBuf::from("pigz");
-        // --- END MODIFICATION ---
-
 
         let task = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
 
             let _ = tx.send(DlEvent::Stage { run: run_acc.clone(), msg: "Queued".into(), pct: 0 }).await;
 
-            // --- START MODIFICATION: Removed conda activate path ---
             let prefetch_command = format!(
-                "mkdir -p ./{}\n{} {} --max-size 100G --output-directory ./{}\n{} -p 20 -O ./{} ./{}\n{} -p 20 ./{}/*.fastq",
-                // Removed conda/qc args
-                run_acc,
-                prefetch.display(), run_acc, run_acc,
-                fasterq_dump.display(), run_acc, run_acc,
-                pigz.display(), run_acc
+                "set -euo pipefail\n\
+                 mkdir -p ./{0}\n\
+                 {1} {0} --max-size 100G --output-directory ./{0}\n\
+                 {2} -e 20 -O ./{0} ./{0}\n\
+                 {3} -p 20 ./{0}/*.fastq",
+                run_acc,                 // {0}
+                prefetch.display(),      // {1}
+                fasterq_dump.display(),  // {2}
+                pigz.display()           // {3}
             );
-            // --- END MODIFICATION ---
 
             if only_scripts {
                 let _ = create_script(&output_path, &run_acc, &prefetch_command);
@@ -762,34 +788,45 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
             }
 
             let _ = tx.send(DlEvent::Stage { run: run_acc.clone(), msg: "Resolving".into(), pct: 10 }).await;
-            let _ = tx.send(DlEvent::Stage { run: run_acc.clone(), msg: "Downloading SRA".into(), pct: 40 }).await;
 
             let spawn_result = Command::new("bash")
                 .arg("-lc")
                 .arg(&prefetch_command)
                 .current_dir(&output_path)
-                .stdout(Stdio::null()) 
-                .stderr(Stdio::null()) 
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
                 .spawn();
 
-            let status;
+            let output;
             match spawn_result {
-                Ok(mut child) => {
-                    status = child.wait().await;
+                Ok(child) => {
+                    output = child.wait_with_output().await;
                 }
                 Err(e) => {
-                    status = Err(e);
+                    let _ = tx.send(DlEvent::Fail { run: run_acc.clone(), err: format!("spawn failed: {}", e) }).await;
+                    return;
                 }
             }
-
-            match status {
-                Ok(s) if s.success() => {
+            
+            match output {
+                Ok(out) if out.status.success() => {
                     let _ = tx.send(DlEvent::Stage { run: run_acc.clone(), msg: "Converting (fasterq-dump)".into(), pct: 85 }).await;
                     let _ = tx.send(DlEvent::Stage { run: run_acc.clone(), msg: "Compressing (pigz)".into(), pct: 95 }).await;
                     let _ = tx.send(DlEvent::Done { run: run_acc.clone() }).await;
                 }
-                Ok(s) => {
-                    let _ = tx.send(DlEvent::Fail { run: run_acc.clone(), err: format!("exit {}", s) }).await;
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let last_error = stderr.lines()
+                        .filter(|s| !s.trim().is_empty() && (s.contains("err:") || s.contains("fail") || s.contains("quit")))
+                        .last()
+                        .unwrap_or("No specific error line found in stderr");
+
+                    let err_msg = format!(
+                        "exit {}. Error: {}",
+                        out.status,
+                        last_error.chars().take(200).collect::<String>()
+                    );
+                    let _ = tx.send(DlEvent::Fail { run: run_acc.clone(), err: err_msg }).await;
                 }
                 Err(e) => {
                     let _ = tx.send(DlEvent::Fail { run: run_acc.clone(), err: e.to_string() }).await;
@@ -820,7 +857,6 @@ fn check_ascp_config(config: &Config) -> Result<()> {
     }
     info!("  ✓ ASCP: {}", config.software.ascp.display());
 
-    // --- START MODIFICATION: Use new config structure ---
     if !config.setting.openssh.exists() {
         return Err(anyhow!(
             "❌ ASCP openssh not found: {}",
@@ -828,7 +864,6 @@ fn check_ascp_config(config: &Config) -> Result<()> {
         ));
     }
     info!("  ✓ OpenSSH key: {}", config.setting.openssh.display());
-    // --- END MODIFICATION ---
 
     Ok(())
 }
@@ -852,20 +887,12 @@ fn check_prefetch_config(config: &Config) -> Result<()> {
     }
     info!("  ✓ fasterq-dump: {}", config.software.fasterq_dump.display());
 
-    // --- START MODIFICATION: Removed pigz check from here ---
-    // The check is now done in main() at startup.
-    // --- END MODIFICATION ---
-
     Ok(())
 }
 
-// --- START MODIFICATION: Added new function to check for pigz ---
-/// Checks if 'pigz' is available in the system PATH.
-/// If not, it returns an error with installation instructions.
 fn check_pigz_dependency() -> Result<()> {
     info!("🔍 Checking for 'pigz' dependency...");
     if which("pigz").is_err() {
-        // Return a hard error that will stop the program
         return Err(anyhow!(
             "❌ 'pigz' is not found in your system PATH.\n  \
              'pigz' is required for the prefetch download method to compress fastq files.\n  \
@@ -875,4 +902,3 @@ fn check_pigz_dependency() -> Result<()> {
     info!("  ✓ 'pigz' dependency found in PATH");
     Ok(())
 }
-// --- END MODIFICATION ---
