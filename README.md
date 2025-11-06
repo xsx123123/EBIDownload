@@ -1,3 +1,4 @@
+
 [中文文档](./docs/README_zh.md) | English
 
 # EBIDownload
@@ -12,6 +13,7 @@ EBIDownload is a command-line tool developed in Rust for efficiently downloading
 - **Parallel Processing**: Supports multi-threaded downloading and decompression.
 - **Easy Configuration**: Manages Aspera paths and keys through a simple YAML file.
 - **Flexible Usage**: Supports direct downloads via project accession numbers.
+- **Resumable Downloads**: Supports resumable downloads in `ascp` and `prefetch` modes, ensuring download continuity.
 
 ---
 
@@ -138,3 +140,29 @@ This command will:
 2. Query all sample data under the project `PRJNA1251654`.
 3. Use the `prefetch` method (default) to download the data at high speed with up to 6 threads into the current directory (`./`).
 4. After the download is complete, automatically perform subsequent processing (like decompression).
+
+**Note on Data Integrity**: To ensure the integrity of downloaded data, it is recommended to perform MD5 verification after the download is complete.
+
+---
+## 5. Output Structure
+
+After the script runs, the output directory will contain the following files and directories:
+
+```
+.
+├── EBIDownload_EMBI-ENA_Download_YYYY-MM-DD_HH-MM-SS.log
+├── R1_fastq_md5.tsv
+├── R2_fastq_md5.tsv
+├── SRRXXXXXX/
+│   └── ... (downloaded files)
+└── ...
+```
+
+- **Log File**: `EBIDownload_EMBI-ENA_Download_... .log`
+  - Records the detailed execution log of the script.
+
+- **MD5 Checksum Files**: `R1_fastq_md5.tsv` and `R2_fastq_md5.tsv`
+  - These files contain the official MD5 checksums and sample names retrieved from the EBI database for the downloaded FASTQ files (R1 and R2 reads, respectively). You can use these files to verify the integrity of your downloaded data.
+
+- **Sample Directories**: `SRRXXXXXX/`
+  - Each directory corresponds to a downloaded sample (Run ID) and contains the actual sequencing data files.
