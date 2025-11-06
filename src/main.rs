@@ -17,7 +17,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use which::which; // --- MODIFICATION: Added for pigz check ---
 
-const VERSION: &str = "1.2.4v";
+const VERSION: &str = "0.0.1v";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
