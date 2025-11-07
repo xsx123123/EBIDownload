@@ -18,7 +18,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use which::which;
 
-const VERSION: &str = "0.0.3.1v";
+const VERSION: &str = "0.0.3.2v";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
@@ -223,6 +223,19 @@ async fn main() {
             }
             DownloadMethod::Prefetch => {
                 check_prefetch_config(&config)?;
+
+                // --- MD5 Mismatch Warning ---
+                warn!("================================[ MD5 Mismatch Warning ]================================");
+                warn!("You have selected the 'prefetch' download method.");
+                warn!("Please note: FASTQ files from the SRA database (via prefetch/fasterq-dump)");
+                warn!("may use *different* Read ID (header) formats than the original files on the EBI/ENA FTP.");
+                warn!("sra-tools *rewrites* these Read IDs when converting from the .sra format.");
+                warn!("Therefore, the MD5 checksums of the generated FASTQ files will *not* match");
+                warn!("the original MD5s provided by EBI. This is expected behavior and does not");
+                warn!("indicate a data error; the biological sequence data is identical.");
+                warn!("========================================================================================");
+                // --- End of Warning ---
+                
                 download_with_prefetch(&processed, &config, &args).await?;
             }
         }
