@@ -18,7 +18,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use which::which;
 
-const VERSION: &str = "0.0.3v";
+const VERSION: &str = "0.0.3.1v";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
