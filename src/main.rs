@@ -18,7 +18,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use which::which;
 
-const VERSION: &str = "0.0.2.3v";
+const VERSION: &str = "0.0.3v";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
@@ -175,56 +175,65 @@ enum DlEvent {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let args = Args::parse();
-    setup_logging()?;
-    print_banner();
+async fn main() {
+    let result: Result<()> = async {
+        let args = Args::parse();
+        setup_logging()?;
+        print_banner();
 
-    check_pigz_dependency().context("pigz dependency check failed")?;
+        check_pigz_dependency().context("pigz dependency check failed")?;
 
-    let filters = RegexFilters::new(&args)?;
-    let config = load_config(&args.yaml).context("Failed to load YAML configuration")?;
+        let filters = RegexFilters::new(&args)?;
+        let config = load_config(&args.yaml).context("Failed to load YAML configuration")?;
 
-    fs::create_dir_all(&args.output).context("Failed to create output directory")?;
-    info!("📁 Output directory: {}", args.output.display());
+        fs::create_dir_all(&args.output).context("Failed to create output directory")?;
+        info!("📁 Output directory: {}", args.output.display());
 
-    let records = if let Some(accession) = &args.accession {
-        fetch_ena_data(accession).await?
-    } else if let Some(tsv_path) = &args.tsv {
-        read_tsv_data(tsv_path)?
-    } else {
-        return Err(anyhow!("Either --accession or --tsv must be provided"));
-    };
+        let records = if let Some(accession) = &args.accession {
+            fetch_ena_data(accession).await?
+        } else if let Some(tsv_path) = &args.tsv {
+            read_tsv_data(tsv_path)?
+        } else {
+            return Err(anyhow!("Either --accession or --tsv must be provided"));
+        };
 
-    info!("📊 Total records fetched: {}", records.len());
+        info!("📊 Total records fetched: {}", records.len());
 
-    let filtered_records = apply_filters(records, &filters)?;
-    info!("✅ Records after filtering: {}", filtered_records.len());
+        let filtered_records = apply_filters(records, &filters)?;
+        info!("✅ Records after filtering: {}", filtered_records.len());
 
-    if filtered_records.is_empty() {
-        warn!("⚠️  No records match the filter criteria. Exiting.");
-        return Ok(());
+        if filtered_records.is_empty() {
+            warn!("⚠️  No records match the filter criteria. Exiting.");
+            return Ok(());
+        }
+
+        let processed = process_records(filtered_records)?;
+        save_md5_files(&processed)?;
+
+        match args.download {
+            DownloadMethod::Ascp => {
+                check_ascp_config(&config)?;
+                download_with_ascp(&processed, &config, &args).await?;
+            }
+            DownloadMethod::Ftp => {
+                download_with_ftp(&processed, &args).await?;
+            }
+            DownloadMethod::Prefetch => {
+                check_prefetch_config(&config)?;
+                download_with_prefetch(&processed, &config, &args).await?;
+            }
+        }
+
+        info!("🎉 {} download completed successfully!", SCRIPT_NAME);
+        Ok(())
     }
+    .await;
 
-    let processed = process_records(filtered_records)?;
-    save_md5_files(&processed)?;
-
-    match args.download {
-        DownloadMethod::Ascp => {
-            check_ascp_config(&config)?;
-            download_with_ascp(&processed, &config, &args).await?;
-        }
-        DownloadMethod::Ftp => {
-            download_with_ftp(&processed, &args).await?;
-        }
-        DownloadMethod::Prefetch => {
-            check_prefetch_config(&config)?;
-            download_with_prefetch(&processed, &config, &args).await?;
-        }
+    if let Err(e) = result {
+        tracing::error!("Application failed: {:?}", e);
+        eprintln!("\n❌ An error occurred. Please check the log file for detailed error information.");
+        std::process::exit(1);
     }
-
-    info!("🎉 {} download completed successfully!", SCRIPT_NAME);
-    Ok(())
 }
 
 fn print_banner() {
@@ -234,32 +243,35 @@ fn print_banner() {
 }
 
 fn setup_logging() -> Result<()> {
+    use tracing_subscriber::{layer::SubscriberExt, Layer};
+
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
     let log_file = format!("{}_EMBI-ENA_Download_{}.log", SCRIPT_NAME, timestamp);
 
     let file = File::create(&log_file)?;
 
+    // File layer: debug level, non-compact, with more info
     let file_layer = fmt::layer()
         .with_writer(file)
         .with_ansi(false)
-        .with_target(false)
-        .with_thread_ids(false)
+        .with_target(true)
+        .with_thread_ids(true)
         .with_timer(fmt::time::LocalTime::rfc_3339())
-        .compact();
+        .with_filter(EnvFilter::new("debug"));
 
+    // Stdout layer: info level, compact, respects RUST_LOG
     let stdout_layer = fmt::layer()
         .with_writer(std::io::stdout)
         .with_ansi(true)
         .with_target(false)
         .with_thread_ids(false)
         .with_timer(fmt::time::LocalTime::rfc_3339())
-        .compact();
-
-    use tracing_subscriber::layer::SubscriberExt;
-    let subscriber = tracing_subscriber::registry()
-        .with(
+        .compact()
+        .with_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        );
+
+    let subscriber = tracing_subscriber::registry()
         .with(file_layer)
         .with(stdout_layer);
 
