@@ -45,6 +45,9 @@ struct Args {
     #[arg(short, long, default_value = "EBIDownload.yaml")]
     yaml: PathBuf,
 
+    #[arg(long, default_value = "info")]
+    log_level: String,
+
     #[arg(long = "filter-sample")]
     filter_sample: Option<String>,
 
@@ -178,7 +181,7 @@ enum DlEvent {
 async fn main() {
     let result: Result<()> = async {
         let args = Args::parse();
-        setup_logging()?;
+        setup_logging(&args.log_level)?;
         print_banner();
 
         check_pigz_dependency().context("pigz dependency check failed")?;
@@ -242,7 +245,7 @@ fn print_banner() {
     println!("{}\n", "=".repeat(60));
 }
 
-fn setup_logging() -> Result<()> {
+fn setup_logging(log_level: &str) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, Layer};
 
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
@@ -259,7 +262,10 @@ fn setup_logging() -> Result<()> {
         .with_timer(fmt::time::LocalTime::rfc_3339())
         .with_filter(EnvFilter::new("debug"));
 
-    // Stdout layer: info level, compact, respects RUST_LOG
+    // Stdout layer: controlled by command line, compact, respects RUST_LOG
+    let stdout_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
+
     let stdout_layer = fmt::layer()
         .with_writer(std::io::stdout)
         .with_ansi(true)
@@ -267,9 +273,7 @@ fn setup_logging() -> Result<()> {
         .with_thread_ids(false)
         .with_timer(fmt::time::LocalTime::rfc_3339())
         .compact()
-        .with_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        );
+        .with_filter(stdout_filter);
 
     let subscriber = tracing_subscriber::registry()
         .with(file_layer)
