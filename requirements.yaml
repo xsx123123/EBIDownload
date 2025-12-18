@@ -1,0 +1,16 @@
+# Python dependencies for sra_downloader_aws_v2.py
+name: sra-downloader-env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.7
+  - pip
+  - pip:
+    - boto3>=1.26.0
+    - requests>=2.28.0
+    - tqdm>=4.64.0
+    - loguru>=0.6.0
+    - tenacity>=8.2.0
+    - rich>=13.0.0
+    - rich-argparse>=1.0.0

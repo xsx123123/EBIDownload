@@ -18,7 +18,9 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 use which::which;
 
-const VERSION: &str = "0.0.3.2v";
+mod aws_s3;
+
+const VERSION: &str = "1.2.5";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
@@ -33,7 +35,7 @@ struct Args {
     #[arg(short, long)]
     output: PathBuf,
 
-    #[arg(short = 'p', long, default_value = "4")]
+    #[arg(short = 'p', long, default_value = "4", help = "文件级并发数：同时下载的文件数量")]
     multithreads: usize,
 
     #[arg(short, long, default_value = "prefetch")]
@@ -59,6 +61,13 @@ struct Args {
 
     #[arg(long = "exclude-run")]
     exclude_run: Option<String>,
+
+    // --- AWS 专用参数 ---
+    #[arg(short = 't', long = "aws-threads", default_value = "8", help = "AWS专用：单文件内部分片下载线程数")]
+    aws_threads: usize,
+
+    #[arg(long = "chunk-size", default_value = "20", help = "AWS专用：分片大小 (MB)")]
+    chunk_size: u64,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -66,6 +75,7 @@ enum DownloadMethod {
     Ascp,
     Ftp,
     Prefetch,
+    Aws,
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,8 +245,11 @@ async fn main() {
                 warn!("indicate a data error; the biological sequence data is identical.");
                 warn!("========================================================================================");
                 // --- End of Warning ---
-                
+
                 download_with_prefetch(&processed, &config, &args).await?;
+            }
+            DownloadMethod::Aws => {
+                download_with_aws(&processed, &args).await?;
             }
         }
 
@@ -488,7 +501,6 @@ async fn download_with_ftp(records: &[ProcessedRecord], args: &Args) -> Result<(
             .tick_chars("⠁⠁⠂⠂⠄⠄⡀⡀⢀⢀⠠⠠⠐⠐⠈⠈"),
         );
         pb.set_prefix(run.clone());
-        // --- MODIFICATION: 添加 steady tick ---
         pb.enable_steady_tick(Duration::from_millis(80));
         bars.insert(run, pb);
     }
@@ -541,7 +553,7 @@ async fn download_with_ftp(records: &[ProcessedRecord], args: &Args) -> Result<(
             }
 
             let _ = tx.send(DlEvent::Stage { run: run_id.clone(), msg: "Downloading".into(), pct: 30 }).await;
-            
+
             let spawn_result = Command::new("bash")
                 .arg("-lc")
                 .arg(&cmd)
@@ -619,7 +631,6 @@ async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: 
             .tick_chars("⠁⠁⠂⠂⠄⠄⡀⡀⢀⢀⠠⠠⠐⠐⠈⠈"),
         );
         pb.set_prefix(run.clone());
-        // --- MODIFICATION: 添加 steady tick ---
         pb.enable_steady_tick(Duration::from_millis(80));
         bars.insert(run, pb);
     }
@@ -749,7 +760,6 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
             .tick_chars("⠁⠁⠂⠂⠄⠄⡀⡀⢀⢀⠠⠠⠐⠐⠈⠈"),
         );
         pb.set_prefix(run.clone());
-        // --- MODIFICATION: 添加 steady tick ---
         pb.enable_steady_tick(Duration::from_millis(80));
         bars.insert(run, pb);
     }
@@ -836,7 +846,7 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
                     return;
                 }
             }
-            
+
             match output {
                 Ok(out) if out.status.success() => {
                     let _ = tx.send(DlEvent::Stage { run: run_acc.clone(), msg: "Converting (fasterq-dump)".into(), pct: 85 }).await;
@@ -916,6 +926,98 @@ fn check_prefetch_config(config: &Config) -> Result<()> {
     }
     info!("  ✓ fasterq-dump: {}", config.software.fasterq_dump.display());
 
+    Ok(())
+}
+
+async fn download_with_aws(records: &[ProcessedRecord], args: &Args) -> Result<()> {
+    info!("☁️  Starting AWS S3 downloads...");
+
+    // 1. 参数拆分：
+    let file_concurrency = args.multithreads; // -p: 多少个文件同时下载
+    let chunk_concurrency = args.aws_threads; // -t: 单文件内部多少个线程分片下载
+    let chunk_size_mb = args.chunk_size;      // --chunk-size
+
+    info!(
+        "⚙️  Config: Parallel Files = {}, Threads per File = {}, Chunk Size = {}MB", 
+        file_concurrency, chunk_concurrency, chunk_size_mb
+    );
+
+    // 2. 信号量控制文件级并发
+    let semaphore = Arc::new(Semaphore::new(file_concurrency));
+
+    let mut handles = Vec::new();
+
+    for record in records {
+        let run_id = record.run_accession.clone();
+        let output_dir = args.output.clone();
+        
+        let sem = semaphore.clone();
+        let max_workers = chunk_concurrency;
+        let chunk_size = chunk_size_mb;
+
+        let handle = tokio::spawn(async move {
+            // 获取文件下载许可
+            let _permit = sem.acquire().await.expect("semaphore closed");
+            
+            info!("📥 [{}] Starting download via AWS S3...", run_id);
+
+            // Get SRA metadata from NCBI API
+            let metadata = aws_s3::SraUtils::get_metadata(&run_id, None).await?;
+
+            if let Some(sra_metadata) = metadata {
+                info!("🔗 [{}] Found S3 URI: {}", run_id, sra_metadata.s3_uri);
+
+                // Create resumable downloader
+                let downloader = aws_s3::ResumableDownloader::new(
+                    run_id.clone(),
+                    sra_metadata,
+                    output_dir,
+                    chunk_size, 
+                    max_workers,
+                ).await?;
+
+                // Start download
+                let success_result = downloader.start().await;
+
+                match success_result {
+                    Ok(success) => {
+                        if success {
+                            info!("✅ [{}] Download completed successfully", run_id);
+                            Ok(())
+                        } else {
+                            warn!("❌ [{}] Download failed", run_id);
+                            Err(anyhow::anyhow!("Download failed for run {}", run_id))
+                        }
+                    }
+                    Err(e) => {
+                        warn!("❌ [{}] Download failed: {}", run_id, e);
+                        Err(e)
+                    }
+                }
+            } else {
+                warn!("❌ [{}] No AWS S3 URI found", run_id);
+                Err(anyhow::anyhow!("No S3 URI available for run {}", run_id))
+            }
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all downloads to complete
+    for handle in handles {
+        match handle.await {
+            Ok(result) => {
+                if let Err(e) = result {
+                    warn!("Download task failed: {}", e);
+                }
+            }
+            Err(e) => {
+                warn!("Download task panicked: {}", e);
+            }
+        }
+    }
+
+    info!("🎉 All AWS S3 downloads completed");
     Ok(())
 }
 
