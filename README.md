@@ -3,17 +3,18 @@
 
 # EBIDownload
 
-EBIDownload is a command-line tool developed in Rust for efficiently downloading sequencing data from the European Bioinformatics Institute (EBI) FTP server. This tool utilizes the [IBM Aspera CLI](https://www.ibm.com/aspera/connect/) for high-speed downloads and [pigz](https://zlib.net/pigz/) for parallel decompression, significantly improving data acquisition efficiency.
+EBIDownload is a command-line tool developed in Rust for efficiently downloading sequencing data from the European Bioinformatics Institute (EBI) FTP server and NCBI SRA. This tool utilizes **AWS S3 global acceleration** and the [IBM Aspera CLI](https://www.ibm.com/aspera/connect/) to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also employs [pigz](https://zlib.net/pigz/) for parallel decompression, significantly improving data acquisition efficiency.
 
 ![EBIDownload](./docs/download.gif)
 
 ## Features
 
+- **AWS S3 Acceleration (Most Recommended)**: Direct multi-threaded downloading from NCBI SRA AWS S3 buckets, maximizing bandwidth utilization for global high-speed access. This is the fastest and most reliable method for large-scale data acquisition.
 - **High-Speed Download**: Integrates Aspera CLI to overcome traditional FTP/HTTP speed limits.
 - **Parallel Processing**: Supports multi-threaded downloading and decompression.
-- **Easy Configuration**: Manages Aspera paths and keys through a simple YAML file.
+- **Easy Configuration**: Manages software paths and keys through a simple YAML file.
 - **Flexible Usage**: Supports direct downloads via project accession numbers.
-- **Resumable Downloads**: Supports resumable downloads in `ascp` and `prefetch` modes, ensuring download continuity.
+- **Resumable Downloads**: Supports resumable downloads in `aws`, `ascp` and `prefetch` modes, ensuring download continuity.
 
 ---
 
@@ -23,7 +24,7 @@ Before running this program, please ensure you have completed the following envi
 
 ### a. Conda Environment
 
-This project depends on a specific version of `aspera-cli`. We recommend using Conda to create an isolated runtime environment.
+This project depends on `sra-tools` (providing `prefetch` and `fasterq-dump`) and `aspera-cli`. We recommend using Conda to create an isolated runtime environment.
 
 ```bash
 # Create and activate the conda environment using the provided .yaml file
@@ -58,10 +59,10 @@ This project is written in Rust. You need to install the [Rust environment](http
 # cd EBIDownload
 
 # Build for development (faster, for debugging)
-cargo build
+CC=clang cargo build
 
 # Build for release (optimized for performance, for production)
-cargo build --release
+CC=clang cargo build --release
 ```
 
 The compiled executable will be located at `target/release/EBIDownload`.
@@ -110,10 +111,14 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 | `-A`  | `--accession`    | Download by project Accession ID                 |              |
 | `-T`  | `--tsv`          | Download using a TSV file containing Accession IDs |              |
 | `-o`  | `--output`       | **Required**, the output directory for downloaded files |              |
-| `-p`  | `--multithreads` | Number of threads for downloading and processing | 4            |
-| `-d`  | `--download`     | Download method (`ascp`, `ftp`, `prefetch`)      | `prefetch`   |
+| `-p`  | `--multithreads` | Number of files to download in parallel          | 4            |
+| `-d`  | `--download`     | Download method (`aws`, `ascp`, `ftp`, `prefetch`) | `prefetch`   |
 | `-O`  | `--only-scripts` | Only generate download scripts, do not execute   |              |
 | `-y`  | `--yaml`         | Specify the path to the `EBIDownload.yaml` config file | `EBIDownload.yaml` |
+|       | `--log-level`    | Log level (debug, info, warn, error)             | `info`       |
+| `-t`  | `--aws-threads`  | **AWS Only**: Threads per file for multipart download | 8            |
+|       | `--chunk-size`   | **AWS Only**: Chunk size in MB                   | 20           |
+|       | `--pe-only`      | Only download Paired-End data, ignore Single-End |              |
 |       | `--filter-sample`| Only download samples matching this ID           |              |
 |       | `--filter-run`   | Only download runs matching this ID              |              |
 |       | `--exclude-sample`| Exclude samples matching this ID                 |              |
@@ -125,6 +130,17 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 
 ### b. Example
 
+**1. AWS S3 High-Speed Mode (Most Recommended)**
+
+This mode uses AWS S3 buckets for global acceleration, similar to IDM. It is the best choice for large-scale data acquisition.
+
+```bash
+# Download using AWS S3 with 8 threads per file, processing 4 files in parallel
+./target/release/EBIDownload -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
+```
+
+**2. Standard Mode (Prefetch)**
+
 The following example demonstrates how to download data for project `PRJNA1251654`, using 6 threads, and saving the files to the current directory.
 
 ```bash
@@ -135,11 +151,14 @@ The following example demonstrates how to download data for project `PRJNA125165
 ./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml
 ```
 
-This command will:
-1. Read the configuration from `./EBIDownload.yaml`.
-2. Query all sample data under the project `PRJNA1251654`.
-3. Use the `prefetch` method (default) to download the data at high speed with up to 6 threads into the current directory (`./`).
-4. After the download is complete, automatically perform subsequent processing (like decompression).
+**3. Alternative: Python Script (AWS Only)**
+
+If you prefer using Python, we also provide a script based on `boto3` for high-speed AWS S3 downloads. You can find it in the `python/` directory.
+
+```bash
+# Usage example for the Python alternative
+python python/sra_downloader_aws_v2.py -A PRJNA1251654 -o ./data
+```
 
 **Note on Data Integrity**: To ensure the integrity of downloaded data, it is recommended to perform MD5 verification after the download is complete.
 

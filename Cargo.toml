@@ -1,6 +1,6 @@
 [package]
 name = "EBIDownload"
-version = "1.2.4"
+version = "1.2.6"
 edition = "2021"
 
 [dependencies]
@@ -11,9 +11,10 @@ csv = "1.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1.0"
+# Tokio 保持 Full 是对的，AWS SDK 也是重度依赖 Tokio
 tokio = { version = "1.35", features = ["full"] }
 
-
+# 你的 Reqwest 配置 (保持 native-tls 不变)
 reqwest = { version = "0.11", default-features = false, features = ["json", "native-tls", "stream", "gzip", "multipart"] }
 
 tracing = "0.1"
@@ -28,5 +29,9 @@ bytes = "1.6"
 thiserror = "1.0"
 quick-xml = "0.36"
 
-aws-config = { version = "1.1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.1" }
+# ============================
+# AWS S3 相关依赖 (修改部分)
+# ============================
+# behavior-version-latest 是必须的，否则运行时会报错 Panic
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1" }
