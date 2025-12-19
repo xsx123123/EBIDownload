@@ -15,6 +15,8 @@ EBIDownload is a command-line tool developed in Rust for efficiently downloading
 - **Easy Configuration**: Manages software paths and keys through a simple YAML file.
 - **Flexible Usage**: Supports direct downloads via project accession numbers.
 - **Resumable Downloads**: Supports resumable downloads in `aws`, `ascp` and `prefetch` modes, ensuring download continuity.
+- **Smart Auto-Fallback**: Automatically attempts AWS S3 first and seamlessly switches to Prefetch if the AWS download fails (Mode: `auto`).
+- **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
 
 ---
 
@@ -112,17 +114,19 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 | `-T`  | `--tsv`          | Download using a TSV file containing Accession IDs |              |
 | `-o`  | `--output`       | **Required**, the output directory for downloaded files |              |
 | `-p`  | `--multithreads` | Number of files to download in parallel          | 4            |
-| `-d`  | `--download`     | Download method (`aws`, `ascp`, `ftp`, `prefetch`) | `prefetch`   |
-| `-O`  | `--only-scripts` | Only generate download scripts, do not execute   |              |
+| `-d`  | `--download`     | Download method (`aws`, `ascp`, `ftp`, `prefetch`, `auto`) | `aws`        |
+| `-O`  | `--only-scripts` | Only generate download scripts, do not execute   | `false`      |
 | `-y`  | `--yaml`         | Specify the path to the `EBIDownload.yaml` config file | `EBIDownload.yaml` |
-|       | `--log-level`    | Log level (debug, info, warn, error)             | `info`       |
-| `-t`  | `--aws-threads`  | **AWS Only**: Threads per file for multipart download | 8            |
+|       | `--log-level`    | Log level (`debug`, `info`, `warn`, `error`)     | `info`       |
+|       | `--log-format`   | Log output format (`text`, `json`)               | `text`       |
+| `-t`  | `--aws-threads`  | **AWS/Prefetch**: Threads for internal chunk download or conversion per file | 8            |
 |       | `--chunk-size`   | **AWS Only**: Chunk size in MB                   | 20           |
-|       | `--pe-only`      | Only download Paired-End data, ignore Single-End |              |
-|       | `--filter-sample`| Only download samples matching this ID           |              |
-|       | `--filter-run`   | Only download runs matching this ID              |              |
-|       | `--exclude-sample`| Exclude samples matching this ID                 |              |
-|       | `--exclude-run`  | Exclude runs matching this ID                    |              |
+|       | `--max-size`     | **Prefetch Only**: Max download size limit (e.g., `100G`) | `100G`       |
+|       | `--pe-only`      | Only download Paired-End data, ignore Single-End | `false`      |
+|       | `--filter-sample`| Regex pattern to include samples matching this   |              |
+|       | `--filter-run`   | Regex pattern to include runs matching this      |              |
+|       | `--exclude-sample`| Regex pattern to exclude samples matching this   |              |
+|       | `--exclude-run`  | Regex pattern to exclude runs matching this      |              |
 | `-h`  | `--help`         | Print help information                           |              |
 | `-V`  | `--version`      | Print version information                        |              |
 
@@ -148,7 +152,7 @@ The following example demonstrates how to download data for project `PRJNA125165
 # conda activate EBIDownload_env
 
 # Example command:
-./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml
+./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
 ```
 
 **3. Alternative: Python Script (AWS Only)**
