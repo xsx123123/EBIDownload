@@ -35,3 +35,4 @@ quick-xml = "0.36"
 # behavior-version-latest 是必须的，否则运行时会报错 Panic
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1" }
+openssl = { version = "0.10", features = ["vendored"] }

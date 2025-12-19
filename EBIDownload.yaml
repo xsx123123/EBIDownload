@@ -1,7 +1,7 @@
 # EBIDownload Setting yaml
 software:
   ascp : /home/jzhang/.local/share/mamba/envs/ascp/bin/ascp
-  prefetch : /home/jzhang/.local/share/mamba/envs/ascp/bin/prefetch
-  fasterq_dump : /home/jzhang/.local/share/mamba/envs/ascp/bin/fasterq-dump
+  prefetch : /home/zj/.local/share/mamba/envs/sra/bin/prefetch
+  fasterq_dump : /home/zj/.local/share/mamba/envs/sra/bin/fasterq-dump
 setting:
   openssh: /home/jzhang/.local/share/mamba/envs/ascp/etc/asperaweb_id_dsa.openssh
