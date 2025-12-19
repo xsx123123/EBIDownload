@@ -66,24 +66,23 @@ pub async fn download_all(
             let sra_dir = output_dir.join(&run_id);
             let sra_file = sra_dir.join(format!("{}.sra", run_id));
             
-            // --- Command Construction ---
+            // --- Command Construction (Strings for Script) ---
             
-            // 1. Prefetch: 
-            // 🟢 Replace hardcoded "100G" with max_size_arg
-            let cmd_prefetch = format!(
+            // 1. Prefetch String
+            let cmd_prefetch_str = format!(
                 "{} {} -O . --max-size {} --verify yes --force no",
                 prefetch, run_id, max_size_arg
             );
 
-            // 2. Convert: 
+            // 2. Convert String
             let relative_sra_path = format!("{}/{}.sra", run_id, run_id);
-            let cmd_convert = format!(
+            let cmd_convert_str = format!(
                 "{} --split-3 -e {} -O . {} -f",
                 fasterq_dump, threads, relative_sra_path
             );
 
-            // 3. Compress: 
-            let cmd_compress = format!(
+            // 3. Compress String
+            let cmd_compress_str = format!(
                 "{} -p {} {}*.fastq",
                 pigz, threads, run_id
             );
@@ -93,9 +92,9 @@ pub async fn download_all(
                 let full_script = format!(
                     "cd {}\n{}\n{}\n{}", 
                     output_dir.display(),
-                    cmd_prefetch, 
-                    cmd_convert, 
-                    cmd_compress
+                    cmd_prefetch_str, 
+                    cmd_convert_str, 
+                    cmd_compress_str
                 );
                 create_script(&output_dir, &run_id, &full_script)?;
                 info!("📝 [{}] Script generated", run_id);
@@ -104,15 +103,32 @@ pub async fn download_all(
 
             // --- Execution Flow ---
             
-            // 1. Prefetch
+            // 1. Prefetch (Direct Command)
             if sra_file.exists() && sra_file.metadata()?.len() > 0 {
                 info!("⏩ [{}] SRA file exists, skipping download.", run_id);
             } else {
                 info!("📥 [{}] Step 1: Prefetching...", run_id);
-                run_command(&cmd_prefetch, &output_dir).await.context("prefetch failed")?;
+                // Direct execution
+                let output = Command::new(&prefetch)
+                    .arg(&run_id)
+                    .arg("-O").arg(".")
+                    .arg("--max-size").arg(&max_size_arg)
+                    .arg("--verify").arg("yes")
+                    .arg("--force").arg("no")
+                    .current_dir(&output_dir)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await?;
+
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    error!("❌ Prefetch failed: {}\nError: {}", cmd_prefetch_str, stderr);
+                    return Err(anyhow::anyhow!("Prefetch failed"));
+                }
             }
 
-            // 2. Convert
+            // 2. Convert (Direct Command)
             let fq_1 = output_dir.join(format!("{}_1.fastq", run_id));
             let fq_single = output_dir.join(format!("{}.fastq", run_id));
             
@@ -120,16 +136,32 @@ pub async fn download_all(
                  info!("⏩ [{}] FASTQ files exist, skipping conversion.", run_id);
             } else {
                 info!("🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
-                let res = run_command(&cmd_convert, &output_dir).await;
-                if let Err(e) = res {
-                    warn!("⚠️ [{}] fasterq-dump error: {}. Checking output...", run_id, e);
+                // Direct execution
+                let output = Command::new(&fasterq_dump)
+                    .arg("--split-3")
+                    .arg("-e").arg(threads.to_string())
+                    .arg("-O").arg(".")
+                    .arg("-f")
+                    .arg(&relative_sra_path)
+                    .current_dir(&output_dir)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await;
+
+                match output {
+                    Ok(out) if !out.status.success() => {
+                         warn!("⚠️ [{}] fasterq-dump error: {}. Checking output...", run_id, String::from_utf8_lossy(&out.stderr));
+                    },
+                    Ok(_) => {},
+                    Err(e) => warn!("⚠️ [{}] fasterq-dump exec error: {}", run_id, e),
                 }
             }
 
-            // 3. Compress
+            // 3. Compress (Shell Command due to wildcard)
             if (fq_1.exists() && fq_1.metadata()?.len() > 0) || (fq_single.exists() && fq_single.metadata()?.len() > 0) {
                 info!("📦 [{}] Step 3: Compressing (pigz)...", run_id);
-                run_command(&cmd_compress, &output_dir).await.context("pigz failed")?;
+                run_command(&cmd_compress_str, &output_dir).await.context("pigz failed")?;
                 
                 info!("✅ [{}] All steps completed!", run_id);
                 Ok(())

@@ -19,7 +19,7 @@ mod aws_s3;
 mod ftp;
 mod prefetch;
 
-const VERSION: &str = "1.3.2";
+const VERSION: &str = "1.3.3";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]
@@ -41,6 +41,8 @@ struct Args {
     yaml: PathBuf,
     #[arg(long, default_value = "info")]
     log_level: String,
+    #[arg(long, default_value = "text", help = "Log format: text or json")]
+    log_format: LogFormat,
     #[arg(long = "filter-sample")]
     filter_sample: Option<String>,
     #[arg(long = "filter-run")]
@@ -65,6 +67,13 @@ enum DownloadMethod {
     Ftp,
     Prefetch,
     Aws,
+    Auto,
+}
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+enum LogFormat {
+    Text,
+    Json,
 }
 
 // Must be pub for submodules
@@ -170,7 +179,7 @@ async fn check_network_health() {
 async fn main() {
     let result: Result<()> = async {
         let args = Args::parse();
-        setup_logging(&args.log_level)?;
+        setup_logging(&args.log_level, &args.log_format)?;
         print_banner();
         check_network_health().await;
         check_pigz_dependency().context("pigz dependency check failed")?;
@@ -207,19 +216,25 @@ async fn main() {
                 download_with_ascp(&processed, &config, &args).await?;
             }
             DownloadMethod::Ftp => {
-                // 🟢 Fix: &config parameter added here
                 download_with_ftp(&processed, &config, &args).await?;
             }
             DownloadMethod::Prefetch => {
                 check_prefetch_config(&config)?;
-                warn!("================================[ Prefetch Mode ]================================");
-                warn!("Using SRA Toolkit 'prefetch' -> 'fasterq-dump' -> 'pigz'");
-                warn!("Ensure 'prefetch' and 'fasterq-dump' paths in YAML are correct.");
-                warn!("=================================================================================");
                 download_with_prefetch(&processed, &config, &args).await?;
             }
             DownloadMethod::Aws => {
                 download_with_aws(&processed, &config, &args).await?;
+            }
+            DownloadMethod::Auto => {
+                info!("🤖 Auto Mode: Attempting AWS S3 first...");
+                // Note: In a full production system, we would track individual file failures.
+                // Here we attempt AWS. If it completes, great.
+                // If the entire batch fails (e.g. API error), we catch it and try Prefetch.
+                if let Err(e) = download_with_aws(&processed, &config, &args).await {
+                    warn!("⚠️  AWS S3 download encountered issues: {}. Switching to Prefetch...", e);
+                    check_prefetch_config(&config)?;
+                    download_with_prefetch(&processed, &config, &args).await?;
+                }
             }
         }
 
@@ -241,7 +256,7 @@ fn print_banner() {
     println!("{}\n", "=".repeat(60));
 }
 
-fn setup_logging(log_level: &str) -> Result<()> {
+fn setup_logging(log_level: &str, format: &LogFormat) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, Layer};
     struct LocalTimer;
     impl fmt::time::FormatTime for LocalTimer {
@@ -250,13 +265,48 @@ fn setup_logging(log_level: &str) -> Result<()> {
         }
     }
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let log_file = format!("{}_EMBI-ENA_Download_{}.log", SCRIPT_NAME, timestamp);
+    let log_file = format!("{}_EBIDownload_{}.log", SCRIPT_NAME, timestamp);
     let file = File::create(&log_file)?;
-    let file_layer = fmt::layer().with_writer(file).with_ansi(false).with_target(true).with_thread_ids(true).with_timer(fmt::time::LocalTime::rfc_3339()).with_filter(EnvFilter::new("debug"));
+    
+    // File layer always uses simple text for readability
+    let file_layer = fmt::layer()
+        .with_writer(file)
+        .with_ansi(false)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_timer(fmt::time::LocalTime::rfc_3339())
+        .with_filter(EnvFilter::new("debug"));
+
     let stdout_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
-    let stdout_layer = fmt::layer().with_writer(std::io::stdout).with_ansi(true).with_target(false).with_thread_ids(false).with_timer(LocalTimer).compact().with_filter(stdout_filter);
-    let subscriber = tracing_subscriber::registry().with(file_layer).with(stdout_layer);
-    tracing::subscriber::set_global_default(subscriber).context("Failed to set subscriber")?;
+    
+    match format {
+        LogFormat::Json => {
+            let json_layer = fmt::layer()
+                .json()
+                .with_writer(std::io::stdout)
+                .with_timer(fmt::time::LocalTime::rfc_3339())
+                .flatten_event(true)
+                .with_target(false)
+                .with_filter(stdout_filter);
+                
+            let subscriber = tracing_subscriber::registry().with(file_layer).with(json_layer);
+            tracing::subscriber::set_global_default(subscriber).context("Failed to set subscriber")?;
+        }
+        LogFormat::Text => {
+            let stdout_layer = fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_ansi(true)
+                .with_target(false)
+                .with_thread_ids(false)
+                .with_timer(LocalTimer)
+                .compact()
+                .with_filter(stdout_filter);
+                
+            let subscriber = tracing_subscriber::registry().with(file_layer).with(stdout_layer);
+            tracing::subscriber::set_global_default(subscriber).context("Failed to set subscriber")?;
+        }
+    }
+
     info!("📝 Log file created: {}", log_file);
     Ok(())
 }
@@ -274,9 +324,7 @@ async fn fetch_ena_data(accession: &str) -> Result<Vec<EnaRecord>> {
     let url = format!("https://www.ebi.ac.uk/ena/portal/api/filereport?accession={}&result=read_run&fields=run_accession,fastq_ftp,fastq_md5,fastq_bytes,sample_title&format=tsv", accession);
     info!("🌐 Fetching data from ENA API for: {}", accession);
     
-    // Fix for DNS issues without Root: Hardcode EBI IP
     let client = reqwest::Client::builder()
-        .resolve("www.ebi.ac.uk", "193.62.193.80:0".parse().unwrap()) 
         .build()?;
         
     let response = client.get(&url).send().await.context("Failed to fetch data from ENA API")?;
@@ -483,9 +531,23 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                 info!("⏩ [{}] FASTQ files already exist, skipping conversion.", run_id);
             } else {
                 info!("🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
-                let result = run_command(&cmd_convert, &output_dir).await;
-                if let Err(e) = result {
-                    warn!("⚠️ [{}] fasterq-dump reported error: {}. Checking if output exists...", run_id, e);
+                // Safe command execution
+                let output = Command::new(&fasterq_dump)
+                    .arg("--split-3")
+                    .arg("-e").arg(process_threads.to_string())
+                    .arg("-O").arg(".")
+                    .arg("-f")
+                    .arg(&sra_filename)
+                    .current_dir(&output_dir)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await;
+
+                match output {
+                     Ok(out) if out.status.success() => {},
+                     Ok(out) => warn!("⚠️ [{}] fasterq-dump error: {}", run_id, String::from_utf8_lossy(&out.stderr)),
+                     Err(e) => warn!("⚠️ [{}] fasterq-dump execution failed: {}", run_id, e),
                 }
             }
 
@@ -494,6 +556,10 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false)) {
                 
                 info!("📦 [{}] Step 3: Compressing (pigz)...", run_id);
+                // Pigz with wildcard still needs shell or glob expansion. 
+                // Using bash -c here is acceptable for wildcard, but we can make it slightly safer by avoiding string formatting if possible.
+                // However, pigz *.fastq is inherently shell-dependent unless we expand in Rust.
+                // For simplicity/robustness, we keep the run_command (shell) for pigz as it is complex to reimplement globbing.
                 run_command(&cmd_compress, &output_dir).await.context("pigz failed")?;
                 info!("✅ [{}] All steps completed successfully!", run_id);
                 Ok(())

@@ -75,11 +75,24 @@ pub async fn process_downloads(
         let t_run = task.run_id.clone();
         let t_size = task.total_size; // 🟢
         
-        let cmd_string = match protocol {
-            Protocol::Ftp => format!("wget -c {}", t_url),
+        let (cmd_bin, cmd_args, cmd_string_for_script) = match protocol {
+            Protocol::Ftp => {
+                ("wget".to_string(), vec!["-c".to_string(), t_url.clone()], format!("wget -c {}", t_url))
+            },
             Protocol::Ascp => {
                 let ascp_url = t_url.replace("ftp.sra.ebi.ac.uk", "era-fasp@fasp.sra.ebi.ac.uk:");
-                format!("{} -QT -k2 -l 800m -P33001 -i {} {} .", ascp_bin, ssh_key, ascp_url)
+                (
+                    ascp_bin.clone(), 
+                    vec![
+                        "-QT".to_string(), "-k2".to_string(), 
+                        "-l".to_string(), "800m".to_string(), 
+                        "-P33001".to_string(), 
+                        "-i".to_string(), ssh_key.clone(), 
+                        ascp_url.clone(), 
+                        ".".to_string()
+                    ],
+                    format!("{} -QT -k2 -l 800m -P33001 -i {} {} .", ascp_bin, ssh_key, ascp_url)
+                )
             }
         };
 
@@ -107,7 +120,7 @@ pub async fn process_downloads(
 
             if only_scripts {
                 pb.set_message("📝 Generating script...");
-                let _ = create_script(&output_dir, &t_run, &cmd_string);
+                let _ = create_script(&output_dir, &t_run, &cmd_string_for_script);
                 pb.finish_with_message("📝 Script Created");
                 return Ok(());
             }
@@ -147,9 +160,8 @@ pub async fn process_downloads(
             });
 
             // Execute download command
-            let output = Command::new("bash")
-                .arg("-c")
-                .arg(&cmd_string)
+            let output = Command::new(&cmd_bin)
+                .args(&cmd_args)
                 .current_dir(&output_dir)
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())
@@ -164,7 +176,7 @@ pub async fn process_downloads(
                     if !out.status.success() {
                         let stderr = String::from_utf8_lossy(&out.stderr);
                         pb.finish_with_message(format!("❌ Failed (Exit {})", out.status));
-                        error!("Command failed: {}\nError: {}", cmd_string, stderr);
+                        error!("Command failed: {}\nError: {}", cmd_string_for_script, stderr);
                         return Err(anyhow!("Download failed"));
                     }
                 }
