@@ -27,7 +27,7 @@ EBIDownload 是一个基于 Rust 开发的命令行工具，用于高效地从�
 
 ```bash
 # 使用项目提供的 .yaml 文件创建并激活 conda 环境
-conda env create -f EBIDownload_env.yaml
+conda env create -f ./docs/EBIDownload_env.yaml
 conda activate EBIDownload_env
 ```
 

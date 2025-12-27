@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::Local;
 use clap::Parser;
+use indicatif::MultiProgress;
 use csv::ReaderBuilder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -179,7 +180,9 @@ async fn check_network_health() {
 async fn main() {
     let result: Result<()> = async {
         let args = Args::parse();
-        setup_logging(&args.log_level, &args.log_format)?;
+        fs::create_dir_all(&args.output).context("Failed to create output directory")?;
+        setup_logging(&args.output, &args.log_level, &args.log_format)?;
+        
         print_banner();
         check_network_health().await;
         check_pigz_dependency().context("pigz dependency check failed")?;
@@ -187,7 +190,6 @@ async fn main() {
         let filters = RegexFilters::new(&args)?;
         let config = load_config(&args.yaml).context("Failed to load YAML configuration")?;
 
-        fs::create_dir_all(&args.output).context("Failed to create output directory")?;
         info!("📁 Output directory: {}", args.output.display());
 
         let records = if let Some(accession) = &args.accession {
@@ -256,7 +258,7 @@ fn print_banner() {
     println!("{}\n", "=".repeat(60));
 }
 
-fn setup_logging(log_level: &str, format: &LogFormat) -> Result<()> {
+fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, Layer};
     struct LocalTimer;
     impl fmt::time::FormatTime for LocalTimer {
@@ -265,8 +267,9 @@ fn setup_logging(log_level: &str, format: &LogFormat) -> Result<()> {
         }
     }
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let log_file = format!("{}_EBIDownload_{}.log", SCRIPT_NAME, timestamp);
-    let file = File::create(&log_file)?;
+    let log_name = format!("{}_EBIDownload_{}.log", SCRIPT_NAME, timestamp);
+    let log_path = output_dir.join(&log_name);
+    let file = File::create(&log_path)?;
     
     // File layer always uses simple text for readability
     let file_layer = fmt::layer()
@@ -307,7 +310,7 @@ fn setup_logging(log_level: &str, format: &LogFormat) -> Result<()> {
         }
     }
 
-    info!("📝 Log file created: {}", log_file);
+    info!("📝 Log file created: {}", log_path.display());
     Ok(())
 }
 
@@ -469,6 +472,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
     info!("⚙️  Config: Parallel Files = {}, Threads/File = {}, Chunk Size = {}MB", file_concurrency, chunk_concurrency, chunk_size_mb);
 
     let semaphore = Arc::new(Semaphore::new(file_concurrency));
+    let mp = Arc::new(MultiProgress::new());
     let mut handles = Vec::new();
 
     let fasterq_dump_path = config.software.fasterq_dump.display().to_string();
@@ -478,6 +482,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
         let run_id = record.run_accession.clone();
         let output_dir = args.output.clone();
         let sem = semaphore.clone();
+        let mp = mp.clone();
         let max_workers = chunk_concurrency;
         let chunk_size = chunk_size_mb;
         let fasterq_dump = fasterq_dump_path.clone();
@@ -498,6 +503,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                     output_dir.clone(),
                     chunk_size, 
                     max_workers,
+                    Some(mp),
                 ).await?;
 
                 if !only_scripts {

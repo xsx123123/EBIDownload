@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use md5;
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -173,6 +173,7 @@ pub struct ResumableDownloader {
     chunk_size: u64,
     max_workers: usize,
     client: Client,
+    mp: Option<Arc<MultiProgress>>,
 }
 
 impl ResumableDownloader {
@@ -182,6 +183,7 @@ impl ResumableDownloader {
         save_dir: PathBuf,
         chunk_size_mb: u64,
         max_workers: usize,
+        mp: Option<Arc<MultiProgress>>,
     ) -> Result<Self> {
         let raw_name = metadata.s3_uri.split('/').last().unwrap_or(&run_id).to_string();
         let filename = if raw_name.ends_with(".sra") { raw_name } else { format!("{}.sra", raw_name) };
@@ -196,7 +198,7 @@ impl ResumableDownloader {
             .pool_max_idle_per_host(max_workers)
             .build()?;
 
-        Ok(Self { run_id, metadata, filepath, meta_file, chunk_size: chunk_size_mb * 1024 * 1024, max_workers, client })
+        Ok(Self { run_id, metadata, filepath, meta_file, chunk_size: chunk_size_mb * 1024 * 1024, max_workers, client, mp })
     }
 
     // ... (load_progress, save_progress, start, verify_integrity methods remain unchanged)
@@ -223,10 +225,7 @@ impl ResumableDownloader {
             let file = File::create(&self.filepath)?;
             file.set_len(self.metadata.size)?;
         }
-        println!("\n📌 [Details] {}", self.run_id);
-        println!("   ├─ 📦 Size: {:.2} GB", self.metadata.size as f64 / 1024.0 / 1024.0 / 1024.0);
-        println!("   ├─ 🔑 MD5 : {}", self.metadata.md5.as_deref().unwrap_or("Unknown"));
-        println!("   └─ 💾 Save: {}\n", self.filepath.display());
+        
         let mut downloaded_chunks = self.load_progress();
         let num_chunks = (self.metadata.size + self.chunk_size - 1) / self.chunk_size;
         let mut tasks = Vec::new();
@@ -235,13 +234,32 @@ impl ResumableDownloader {
                 tasks.push(ChunkInfo { id: i as usize, start: i * self.chunk_size, end: std::cmp::min((i + 1) * self.chunk_size - 1, self.metadata.size - 1) });
             }
         }
-        if tasks.is_empty() {
-            println!("   ✅ File exists, starting integrity check...");
-            return self.verify_integrity(start_time.elapsed().as_secs_f64(), true).await;
-        }
-        let pb = ProgressBar::new(self.metadata.size);
+
+        // 🟢 Setup Progress Bar
+        let pb = if let Some(mp) = &self.mp {
+             mp.add(ProgressBar::new(self.metadata.size))
+        } else {
+             ProgressBar::new(self.metadata.size)
+        };
         pb.set_style(ProgressStyle::default_bar().template("{prefix:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({binary_bytes_per_sec}, {eta}) {msg}")?.progress_chars("#>-"));
         pb.set_prefix(self.run_id.clone());
+        
+        // 🟢 Print details using pb.println to avoid interfering with bars
+        let details = format!(
+            "\n📌 [Details] {}\n   ├─ 📦 Size: {:.2} GB\n   ├─ 🔑 MD5 : {}\n   └─ 💾 Save: {}\n", 
+            self.run_id,
+            self.metadata.size as f64 / 1024.0 / 1024.0 / 1024.0,
+            self.metadata.md5.as_deref().unwrap_or("Unknown"),
+            self.filepath.display()
+        );
+        pb.println(details);
+
+        if tasks.is_empty() {
+            pb.println(format!("   ✅ File exists, starting integrity check: {}", self.run_id));
+            pb.finish_and_clear();
+            return self.verify_integrity(start_time.elapsed().as_secs_f64(), true).await;
+        }
+
         let initial_bytes = downloaded_chunks.len() as u64 * self.chunk_size;
         pb.set_position(std::cmp::min(initial_bytes, self.metadata.size));
         let (tx, mut rx) = mpsc::channel(100); 
@@ -282,18 +300,26 @@ impl ResumableDownloader {
         if downloaded_chunks.len() as u64 == num_chunks {
             self.verify_integrity(start_time.elapsed().as_secs_f64(), false).await
         } else {
-            println!("❌ Download incomplete. Progress saved, please retry.");
+            pb.println("❌ Download incomplete. Progress saved, please retry.");
             Ok(false)
         }
     }
     async fn verify_integrity(&self, download_duration: f64, skipped_download: bool) -> Result<bool> {
         let start_time = std::time::Instant::now();
         if self.metadata.md5.is_none() { 
-            println!("   ⚠️ No MD5 info, skipping verification");
+            let msg = "   ⚠️ No MD5 info, skipping verification";
+            if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
             return Ok(true); 
         }
-        let pb = ProgressBar::new(self.metadata.size);
+        
+        let pb = if let Some(mp) = &self.mp {
+             mp.add(ProgressBar::new(self.metadata.size))
+        } else {
+             ProgressBar::new(self.metadata.size)
+        };
+        
         pb.set_style(ProgressStyle::default_bar().template("🔍 Verifying [{bar:40.green/white}] {bytes}/{total_bytes} ({binary_bytes_per_sec})")?.progress_chars("##-"));
+        
         let mut file = tokio::fs::File::open(&self.filepath).await?;
         let mut ctx = md5::Context::new();
         let mut buf = vec![0u8; 1024 * 1024]; 
@@ -304,20 +330,23 @@ impl ResumableDownloader {
             pb.inc(n as u64);
         }
         pb.finish_and_clear();
+        
         let local_md5 = format!("{:x}", ctx.compute());
         let expected_md5 = self.metadata.md5.as_ref().unwrap();
         if &local_md5 == expected_md5 {
             if !skipped_download {
                let speed = (self.metadata.size as f64 / 1024.0 / 1024.0) / download_duration;
-               println!("   └─ 🚀 Download speed: {:.2} MB/s", speed);
+               let msg = format!("   └─ 🚀 Download speed: {:.2} MB/s", speed);
+               if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
             }
-            println!("   └─ ✅ MD5 verified (Time: {:.2}s)", start_time.elapsed().as_secs_f64());
+            let msg = format!("   └─ ✅ MD5 verified (Time: {:.2}s)", start_time.elapsed().as_secs_f64());
+            if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
+            
             let _ = std::fs::remove_file(&self.meta_file);
             Ok(true)
         } else {
-            println!("   └─ ❌ MD5 verification failed!");
-            println!("      Local: {}", local_md5);
-            println!("      Remote: {}", expected_md5);
+            let msg = format!("   └─ ❌ MD5 verification failed!\n      Local: {}\n      Remote: {}", local_md5, expected_md5);
+            if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
             Ok(false)
         }
     }

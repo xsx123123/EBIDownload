@@ -30,7 +30,7 @@ This project depends on `sra-tools` (providing `prefetch` and `fasterq-dump`) an
 
 ```bash
 # Create and activate the conda environment using the provided .yaml file
-conda env create -f EBIDownload_env.yaml
+conda env create -f ./docs/EBIDownload_env.yaml
 conda activate EBIDownload_env
 ```
 
