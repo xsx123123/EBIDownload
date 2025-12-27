@@ -3,6 +3,9 @@
 ## [1.3.4] - 2025-12-27
 
 ### Added
+- **Full Metadata Support**: Expanded `EnaRecord` to capture all 49 fields from the EBI API (e.g., `study_accession`, `tax_id`, `instrument_model`, `read_count`), providing comprehensive dataset details.
+- **Metadata Export**: Automatically saves all fetched and filtered metadata to `ena_metadata.tsv` in the output directory.
+- **Output Organization**: `R1/R2_fastq_md5.tsv` files are now saved directly to the specified output directory instead of the working directory.
 - **Log Management Improvement**: Logs are now automatically saved in the user-specified output directory (`--output`) for better organization and management.
 - **Multi-thread Progress Coordination**: Integrated `indicatif::MultiProgress` to resolve display conflicts when downloading multiple files concurrently.
 
