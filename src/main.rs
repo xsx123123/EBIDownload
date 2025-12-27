@@ -20,7 +20,7 @@ mod aws_s3;
 mod ftp;
 mod prefetch;
 
-const VERSION: &str = "1.3.3";
+const VERSION: &str = "1.3.5";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 #[derive(Parser, Debug)]

@@ -220,6 +220,25 @@ impl ResumableDownloader {
     }
     pub async fn start(&self) -> Result<bool> {
         let start_time = std::time::Instant::now();
+
+        // 🟢 Check if file exists and size matches, then verify MD5 first
+        if self.filepath.exists() {
+             if let Ok(meta) = tokio::fs::metadata(&self.filepath).await {
+                if meta.len() == self.metadata.size {
+                    let msg = format!("   📂 Found existing file with correct size: {}", self.run_id);
+                    if let Some(mp) = &self.mp { let _ = mp.println(&msg); } else { println!("{}", msg); }
+                    
+                    // Verify integrity
+                    if self.verify_integrity(0.0, true).await? {
+                         return Ok(true);
+                    } else {
+                         let msg = format!("   ❌ Integrity check failed for existing file. Redownloading: {}", self.run_id);
+                         if let Some(mp) = &self.mp { let _ = mp.println(&msg); } else { println!("{}", msg); }
+                    }
+                }
+             }
+        }
+
         if !self.filepath.exists() {
             if let Some(parent) = self.filepath.parent() { std::fs::create_dir_all(parent)?; }
             let file = File::create(&self.filepath)?;
