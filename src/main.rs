@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Local;
 use clap::Parser;
 use indicatif::MultiProgress;
-use csv::ReaderBuilder;
+use csv::{ReaderBuilder, WriterBuilder};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
@@ -209,8 +209,10 @@ async fn main() {
             return Ok(());
         }
 
+        save_metadata_tsv(&filtered_records, &args.output)?;
+
         let processed = process_records(filtered_records, &args)?;
-        save_md5_files(&processed)?;
+        save_md5_files(&processed, &args.output)?;
 
         match args.download {
             DownloadMethod::Ascp => {
@@ -414,10 +416,14 @@ fn process_records(records: Vec<EnaRecord>, args: &Args) -> Result<Vec<Processed
     Ok(processed)
 }
 
-fn save_md5_files(records: &[ProcessedRecord]) -> Result<()> {
-    info!("💾 Saving MD5 files...");
-    let mut r1_file = File::create("R1_fastq_md5.tsv")?;
-    let mut r2_file = File::create("R2_fastq_md5.tsv")?;
+fn save_md5_files(records: &[ProcessedRecord], output_dir: &Path) -> Result<()> {
+    info!("💾 Saving MD5 files to {}...", output_dir.display());
+    let r1_path = output_dir.join("R1_fastq_md5.tsv");
+    let r2_path = output_dir.join("R2_fastq_md5.tsv");
+    
+    let mut r1_file = File::create(&r1_path)?;
+    let mut r2_file = File::create(&r2_path)?;
+    
     for record in records {
         writeln!(r1_file, "{}\t{}\t{}", record.fastq_md5_1, record.fastq_ftp_1_name, record.sample_title)?;
         if let (Some(md5), Some(name)) = (&record.fastq_md5_2, &record.fastq_ftp_2_name) {
@@ -425,6 +431,21 @@ fn save_md5_files(records: &[ProcessedRecord]) -> Result<()> {
         }
     }
     info!("✅ MD5 files saved");
+    Ok(())
+}
+
+fn save_metadata_tsv(records: &[EnaRecord], output_dir: &Path) -> Result<()> {
+    let path = output_dir.join("ena_metadata.tsv");
+    info!("💾 Saving ENA metadata to {}...", path.display());
+    let mut wtr = WriterBuilder::new()
+        .delimiter(b'\t')
+        .from_path(&path)?;
+        
+    for record in records {
+        wtr.serialize(record)?;
+    }
+    wtr.flush()?;
+    info!("✅ Metadata saved");
     Ok(())
 }
 
