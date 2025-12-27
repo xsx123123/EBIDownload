@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::{Mutex, mpsc}; 
 use tokio::io::AsyncReadExt; 
@@ -280,7 +281,22 @@ impl ResumableDownloader {
         }
 
         let initial_bytes = downloaded_chunks.len() as u64 * self.chunk_size;
-        pb.set_position(std::cmp::min(initial_bytes, self.metadata.size));
+        // 🟢 Fix: Use AtomicU64 to track global progress safely (handles retries)
+        let global_bytes = Arc::new(AtomicU64::new(std::cmp::min(initial_bytes, self.metadata.size)));
+        
+        pb.set_position(global_bytes.load(Ordering::Relaxed));
+        
+        // 🟢 Spawn progress monitor
+        let pb_monitor = pb.clone();
+        let gb_monitor = global_bytes.clone();
+        let monitor_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            loop {
+                interval.tick().await;
+                pb_monitor.set_position(gb_monitor.load(Ordering::Relaxed));
+            }
+        });
+
         let (tx, mut rx) = mpsc::channel(100); 
         let shared_tasks = Arc::new(Mutex::new(tasks));
         for _ in 0..self.max_workers {
@@ -289,13 +305,13 @@ impl ResumableDownloader {
             let filepath = self.filepath.clone();
             let queue = shared_tasks.clone();
             let tx = tx.clone();
-            let pb_clone = pb.clone();
+            let gb_clone = global_bytes.clone();
             tokio::spawn(async move {
                 loop {
                     let task = { let mut q = queue.lock().await; q.pop() };
                     match task {
                         Some(t) => {
-                            match download_chunk_http(client.clone(), &url, &t, &filepath, pb_clone.clone()).await {
+                            match download_chunk_http(client.clone(), &url, &t, &filepath, gb_clone.clone()).await {
                                 Ok(_) => { if let Err(_) = tx.send(Ok(t.id)).await { break; } },
                                 Err(e) => { let _ = tx.send(Err(e)).await; }
                             }
@@ -315,6 +331,8 @@ impl ResumableDownloader {
                 Err(_e) => {}
             }
         }
+        
+        monitor_handle.abort();
         pb.finish_and_clear();
         if downloaded_chunks.len() as u64 == num_chunks {
             self.verify_integrity(start_time.elapsed().as_secs_f64(), false).await
@@ -371,11 +389,15 @@ impl ResumableDownloader {
     }
 }
 
-async fn download_chunk_http(client: Client, url: &str, chunk: &ChunkInfo, filepath: &Path, pb: ProgressBar) -> Result<()> {
+async fn download_chunk_http(client: Client, url: &str, chunk: &ChunkInfo, filepath: &Path, global_bytes: Arc<AtomicU64>) -> Result<()> {
     let mut retry = 0;
     loop {
         let range_header = format!("bytes={}-{}", chunk.start, chunk.end);
         let resp = client.get(url).header(header::RANGE, range_header).send().await;
+
+        // Track bytes downloaded in this attempt to rollback on failure
+        let mut downloaded_in_attempt: u64 = 0;
+
         match resp {
             Ok(response) => {
                 if !response.status().is_success() {
@@ -392,7 +414,9 @@ async fn download_chunk_http(client: Client, url: &str, chunk: &ChunkInfo, filep
                     match item {
                         Ok(bytes) => {
                             if let Err(_) = file.write_all(&bytes) { stream_error = true; break; }
-                            pb.inc(bytes.len() as u64);
+                            let len = bytes.len() as u64;
+                            global_bytes.fetch_add(len, Ordering::Relaxed);
+                            downloaded_in_attempt += len;
                         }
                         Err(_) => { stream_error = true; break; }
                     }
@@ -401,6 +425,12 @@ async fn download_chunk_http(client: Client, url: &str, chunk: &ChunkInfo, filep
             }
             Err(_) => {}
         }
+
+        // Rollback progress if failed
+        if downloaded_in_attempt > 0 {
+            global_bytes.fetch_sub(downloaded_in_attempt, Ordering::Relaxed);
+        }
+
         retry += 1;
         if retry > 15 { return Err(anyhow!("Chunk failed")); }
         tokio::time::sleep(Duration::from_millis(500 * 2_u64.pow(retry as u32))).await;
