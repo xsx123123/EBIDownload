@@ -101,11 +101,58 @@ pub struct SettingPaths {
 #[derive(Debug, Deserialize, Serialize)]
 struct EnaRecord {
     run_accession: String,
-    fastq_ftp: String,
+    study_accession: Option<String>,
+    secondary_study_accession: Option<String>,
+    sample_accession: Option<String>,
+    secondary_sample_accession: Option<String>,
+    experiment_accession: Option<String>,
+    submission_accession: Option<String>,
+    tax_id: Option<String>,
+    scientific_name: Option<String>,
+    instrument_platform: Option<String>,
+    instrument_model: Option<String>,
+    library_name: Option<String>,
+    nominal_length: Option<String>,
+    library_layout: Option<String>,
+    library_strategy: Option<String>,
+    library_source: Option<String>,
+    library_selection: Option<String>,
+    read_count: Option<String>,
+    center_name: Option<String>,
+    first_public: Option<String>,
+    last_updated: Option<String>,
+    experiment_title: Option<String>,
+    study_title: Option<String>,
+    study_alias: Option<String>,
+    run_alias: Option<String>,
+    #[serde(default)]
+    fastq_bytes: String,
+    #[serde(default)]
     fastq_md5: String,
     #[serde(default)]
-    fastq_bytes: String, // Byte size string returned by ENA API (semicolon separated)
+    fastq_ftp: String,
+    fastq_aspera: Option<String>,
+    fastq_galaxy: Option<String>,
+    submitted_bytes: Option<String>,
+    submitted_md5: Option<String>,
+    submitted_ftp: Option<String>,
+    submitted_aspera: Option<String>,
+    submitted_galaxy: Option<String>,
+    submitted_format: Option<String>,
+    sra_bytes: Option<String>,
+    sra_md5: Option<String>,
+    sra_ftp: Option<String>,
+    sra_aspera: Option<String>,
+    sra_galaxy: Option<String>,
+    sample_alias: Option<String>,
+    #[serde(default)]
     sample_title: String,
+    nominal_sdev: Option<String>,
+    first_created: Option<String>,
+    bam_ftp: Option<String>,
+    fastq_file_role: Option<String>,
+    submitted_file_role: Option<String>,
+    sra_file_role: Option<String>,
 }
 
 // Must be pub
@@ -326,7 +373,8 @@ fn load_config(yaml_path: &Path) -> Result<Config> {
 }
 
 async fn fetch_ena_data(accession: &str) -> Result<Vec<EnaRecord>> {
-    let url = format!("https://www.ebi.ac.uk/ena/portal/api/filereport?accession={}&result=read_run&fields=run_accession,fastq_ftp,fastq_md5,fastq_bytes,sample_title&format=tsv", accession);
+    let fields = "run_accession,study_accession,secondary_study_accession,sample_accession,secondary_sample_accession,experiment_accession,submission_accession,tax_id,scientific_name,instrument_platform,instrument_model,library_name,nominal_length,library_layout,library_strategy,library_source,library_selection,read_count,center_name,first_public,last_updated,experiment_title,study_title,study_alias,run_alias,fastq_bytes,fastq_md5,fastq_ftp,fastq_aspera,fastq_galaxy,submitted_bytes,submitted_md5,submitted_ftp,submitted_aspera,submitted_galaxy,submitted_format,sra_bytes,sra_md5,sra_ftp,sra_aspera,sra_galaxy,sample_alias,sample_title,nominal_sdev,first_created,bam_ftp,fastq_file_role,submitted_file_role,sra_file_role";
+    let url = format!("https://www.ebi.ac.uk/ena/portal/api/filereport?accession={}&result=read_run&fields={}&format=tsv", accession, fields);
     info!("🌐 Fetching data from ENA API for: {}", accession);
     
     let client = reqwest::Client::builder()
