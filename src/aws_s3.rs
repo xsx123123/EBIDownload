@@ -391,49 +391,57 @@ impl ResumableDownloader {
 
 async fn download_chunk_http(client: Client, url: &str, chunk: &ChunkInfo, filepath: &Path, global_bytes: Arc<AtomicU64>) -> Result<()> {
     let mut retry = 0;
-    loop {
-        let range_header = format!("bytes={}-{}", chunk.start, chunk.end);
-        let resp = client.get(url).header(header::RANGE, range_header).send().await;
+    let mut current_offset = chunk.start;
 
-        // Track bytes downloaded in this attempt to rollback on failure
-        let mut downloaded_in_attempt: u64 = 0;
+    loop {
+        if current_offset > chunk.end {
+            return Ok(());
+        }
+
+        let range_header = format!("bytes={}-{}", current_offset, chunk.end);
+        let resp = client.get(url).header(header::RANGE, range_header).send().await;
 
         match resp {
             Ok(response) => {
                 if !response.status().is_success() {
                     retry += 1;
-                    if retry > 5 { return Err(anyhow!("HTTP Status {}", response.status())); }
+                    if retry > 10 { return Err(anyhow!("HTTP Status {}", response.status())); }
                     tokio::time::sleep(Duration::from_secs(retry)).await;
                     continue;
                 }
                 let mut stream = response.bytes_stream();
                 let mut file = std::fs::OpenOptions::new().write(true).open(filepath)?;
-                file.seek(SeekFrom::Start(chunk.start))?;
+                file.seek(SeekFrom::Start(current_offset))?;
+                
                 let mut stream_error = false;
+                let offset_start = current_offset;
+
                 while let Some(item) = stream.next().await {
                     match item {
                         Ok(bytes) => {
                             if let Err(_) = file.write_all(&bytes) { stream_error = true; break; }
                             let len = bytes.len() as u64;
                             global_bytes.fetch_add(len, Ordering::Relaxed);
-                            downloaded_in_attempt += len;
+                            current_offset += len;
                         }
                         Err(_) => { stream_error = true; break; }
                     }
                 }
-                if !stream_error { return Ok(()); }
+                
+                if !stream_error && current_offset > chunk.end { return Ok(()); }
+                
+                // If we made progress, reset retry counter
+                if current_offset > offset_start {
+                    retry = 0;
+                }
             }
             Err(_) => {}
         }
 
-        // Rollback progress if failed
-        if downloaded_in_attempt > 0 {
-            global_bytes.fetch_sub(downloaded_in_attempt, Ordering::Relaxed);
-        }
-
         retry += 1;
-        if retry > 15 { return Err(anyhow!("Chunk failed")); }
-        tokio::time::sleep(Duration::from_millis(500 * 2_u64.pow(retry as u32))).await;
+        if retry > 20 { return Err(anyhow!("Chunk failed after multiple retries")); }
+        let sleep_sec = std::cmp::min(30, 1_u64 << std::cmp::min(retry, 5));
+        tokio::time::sleep(Duration::from_secs(sleep_sec)).await;
     }
 }
 
