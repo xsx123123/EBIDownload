@@ -143,7 +143,19 @@ This mode uses AWS S3 buckets for global acceleration, similar to IDM. It is the
 ./target/release/EBIDownload -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
 ```
 
-**2. Standard Mode (Prefetch)**
+**2. Filtering Mode**
+
+You can use `--filter-run` or `--filter-sample` to download specific data.
+
+```bash
+# Download a specific Run from a project
+./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws -y /data/jzhang/software/EBIDownload/EBIDownload.yaml --chunk-size 200 --filter-run SRR19019104
+
+# Download multiple specified Runs (separated by spaces)
+./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
+```
+
+**3. Standard Mode (Prefetch)**
 
 The following example demonstrates how to download data for project `PRJNA1251654`, using 6 threads, and saving the files to the current directory.
 
@@ -155,7 +167,7 @@ The following example demonstrates how to download data for project `PRJNA125165
 ./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
 ```
 
-**3. Alternative: Python Script (AWS Only)**
+**4. Alternative: Python Script (AWS Only)**
 
 If you prefer using Python, we also provide a script based on `boto3` for high-speed AWS S3 downloads. You can find it in the `python/` directory.
 

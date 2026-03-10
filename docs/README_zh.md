@@ -136,14 +136,26 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 ./target/release/EBIDownload -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
 ```
 
-**2. 标准模式 (Prefetch)**
+**2. 过滤下载示例 (Filter Mode)**
+
+你可以使用 `--filter-run` 或 `--filter-sample` 来指定下载特定的运行 (Run) 或样本 (Sample)。
+
+```bash
+# 下载指定项目中的特定 Run (单个)
+./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws -y /data/jzhang/software/EBIDownload/EBIDownload.yaml --chunk-size 200 --filter-run SRR19019104
+
+# 下载多个指定的 Run (空格分隔)
+./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
+```
+
+**3. 标准模式 (Prefetch)**
 
 ```bash
 # 示例命令:
 ./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
 ```
 
-**3. 备选方案：Python 脚本 (仅限 AWS)**
+**4. 备选方案：Python 脚本 (仅限 AWS)**
 
 如果你更倾向于使用 Python，我们在 `python/` 目录下也提供了一个基于 `boto3` 开发的下载脚本，同样可以实现极速下载。
 

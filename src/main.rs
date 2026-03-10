@@ -44,14 +44,14 @@ struct Args {
     log_level: String,
     #[arg(long, default_value = "text", help = "Log format: text or json")]
     log_format: LogFormat,
-    #[arg(long = "filter-sample")]
-    filter_sample: Option<String>,
-    #[arg(long = "filter-run")]
-    filter_run: Option<String>,
-    #[arg(long = "exclude-sample")]
-    exclude_sample: Option<String>,
-    #[arg(long = "exclude-run")]
-    exclude_run: Option<String>,
+    #[arg(long = "filter-sample", num_args = 1..)]
+    filter_sample: Option<Vec<String>>,
+    #[arg(long = "filter-run", num_args = 1..)]
+    filter_run: Option<Vec<String>>,
+    #[arg(long = "exclude-sample", num_args = 1..)]
+    exclude_sample: Option<Vec<String>>,
+    #[arg(long = "exclude-run", num_args = 1..)]
+    exclude_run: Option<Vec<String>>,
     #[arg(short = 't', long = "aws-threads", default_value = "8", help = "AWS/Prefetch only: Threads for internal chunk download or conversion per file")]
     aws_threads: usize,
     #[arg(long = "chunk-size", default_value = "20", help = "AWS only: Chunk size (MB)")]
@@ -181,10 +181,10 @@ struct RegexFilters {
 impl RegexFilters {
     fn new(args: &Args) -> Result<Self> {
         Ok(Self {
-            include_sample: args.filter_sample.as_deref().map(Regex::new).transpose().context("Invalid regex pattern for --filter-sample")?,
-            include_run: args.filter_run.as_deref().map(Regex::new).transpose().context("Invalid regex pattern for --filter-run")?,
-            exclude_sample: args.exclude_sample.as_deref().map(Regex::new).transpose().context("Invalid regex pattern for --exclude-sample")?,
-            exclude_run: args.exclude_run.as_deref().map(Regex::new).transpose().context("Invalid regex pattern for --exclude-run")?,
+            include_sample: args.filter_sample.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --filter-sample")?,
+            include_run: args.filter_run.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --filter-run")?,
+            exclude_sample: args.exclude_sample.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --exclude-sample")?,
+            exclude_run: args.exclude_run.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --exclude-run")?,
         })
     }
 
