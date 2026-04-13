@@ -155,14 +155,32 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 ./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
 ```
 
-**4. 备选方案：Python 脚本 (仅限 AWS)**
+---
 
-如果你更倾向于使用 Python，我们在 `python/` 目录下也提供了一个基于 `boto3` 开发的下载脚本，同样可以实现极速下载。
+## 工具使用限制说明（AWS S3 高速下载模式）
 
-```bash
-# Python 备选方案使用示例
-python python/sra_downloader_aws_v2.py -A PRJNA1251654 -o ./data
-```
+本工具基于 AWS S3 开放数据池（`s3://sra-pub-run-odp/`）实现高速下载，仅适用于已完成 SRA 归档的数据。由于 NCBI 数据处理流程的固有时序，存在以下重要限制：
+
+1. **数据可用性延迟**
+   GEO 元数据发布（获得 GSE/GSM 号）≠ SRA 数据可用。
+   原始测序数据需经过质检、格式转换、索引建立等流程，通常需要 **1-4 周** 才会从 GEO 转入 SRA 并同步至 AWS S3。
+   在此期间，即使 GEO 页面已公开，S3 路径尚未生成，工具将返回 404 错误。
+
+2. **如何判断数据是否就绪**
+   在下载前，请先确认：
+   - GEO 页面已显示 "SRA Run Selector" 链接（而非 "数据即将可用"）
+   - 或通过命令行验证：`esearch -db sra -query "GSEXXXXXX" | efetch -format runinfo` 能返回 SRR 编号列表
+
+3. **未就绪数据的替代方案**
+   如果数据尚未进入 SRA：
+   - **使用 SRA Toolkit**：通过 `prefetch` 命令提交下载请求，系统将在数据可用后自动获取（可能需要排队等待）
+   - **联系原作者**：GEO 页面提供通讯作者联系方式，通常可在 24-48 小时内获得直接下载链接（FTP/Google Drive 等）
+   - **检查 ENA 镜像**：欧洲核苷酸档案（ENA）有时比 SRA 提前 1-3 天可用，可尝试 `ftp://ftp.sra.ebi.ac.uk/`
+
+4. **推荐下载策略**
+   建议实现分层下载逻辑：先检查 SRA 可用性，若已就绪则使用本工具进行高速 S3 下载；若未就绪，则自动回退至 SRA Toolkit 或提示用户等待/联系作者。
+
+> **注**：此限制源于 NCBI 数据归档架构，非本工具技术缺陷。对于紧急需求，建议优先联系数据提交者获取原始文件。
 
 ---
 ## 5. 输出文件结构

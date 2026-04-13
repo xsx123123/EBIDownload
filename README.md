@@ -167,16 +167,32 @@ The following example demonstrates how to download data for project `PRJNA125165
 ./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
 ```
 
-**4. Alternative: Python Script (AWS Only)**
+---
 
-If you prefer using Python, we also provide a script based on `boto3` for high-speed AWS S3 downloads. You can find it in the `python/` directory.
+## Important Notes on AWS S3 High-Speed Download Mode
 
-```bash
-# Usage example for the Python alternative
-python python/sra_downloader_aws_v2.py -A PRJNA1251654 -o ./data
-```
+This tool leverages the AWS S3 open data pool (`s3://sra-pub-run-odp/`) for high-speed downloads, which is only applicable to data that has already been archived in SRA. Due to the inherent timing of NCBI data processing workflows, the following important limitations apply:
 
-**Note on Data Integrity**: To ensure the integrity of downloaded data, it is recommended to perform MD5 verification after the download is complete.
+1. **Data Availability Delay**
+   GEO metadata release (obtaining GSE/GSM IDs) ≠ SRA data availability.
+   Raw sequencing data must undergo quality control, format conversion, and indexing before it is transferred from GEO to SRA and synchronized to AWS S3. This process usually takes **1–4 weeks**.
+   During this period, even if the GEO page is public, the S3 path may not yet exist, and the tool will return a 404 error.
+
+2. **How to Check if Data is Ready**
+   Before downloading, please confirm:
+   - The GEO page shows an "SRA Run Selector" link (rather than "Data coming soon").
+   - Or verify via the command line: `esearch -db sra -query "GSEXXXXXX" | efetch -format runinfo` returns a list of SRR accessions.
+
+3. **Alternatives for Data Not Yet in SRA**
+   If the data has not yet entered SRA:
+   - **Use SRA Toolkit**: Submit a download request with the `prefetch` command; the system will automatically fetch the data once it becomes available (may require queuing).
+   - **Contact the original authors**: The GEO page provides contact information for the corresponding authors, who can usually provide a direct download link (FTP, Google Drive, etc.) within 24–48 hours.
+   - **Check the ENA mirror**: The European Nucleotide Archive (ENA) is sometimes available 1–3 days earlier than SRA. Try `ftp://ftp.sra.ebi.ac.uk/`.
+
+4. **Recommended Download Strategy**
+   We recommend implementing a tiered download logic: first check SRA availability; if ready, use this tool for high-speed S3 downloads; if not ready, automatically fall back to SRA Toolkit or prompt the user to wait/contact the authors.
+
+> **Note**: This limitation stems from the NCBI data archiving architecture, not a technical defect of this tool. For urgent needs, we recommend contacting the data submitter to obtain the original files directly.
 
 ---
 ## 5. Output Structure
