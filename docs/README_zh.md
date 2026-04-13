@@ -194,3 +194,11 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 │   └── ... (下载的数据文件)
 └── ...
 ```
+- **日志文件**: `EBIDownload_EMBI-ENA_Download_... .log`
+  - 记录脚本的详细执行日志。
+
+- **MD5 校验文件**: `R1_fastq_md5.tsv` 和 `R2_fastq_md5.tsv`
+  - 这些文件包含从 EBI 数据库获取的官方 MD5 校验值和样本名称，分别对应下载的 FASTQ 文件的 R1 和 R2 读段。你可以使用这些文件来验证下载数据的完整性。
+
+- **样本目录**: `SRRXXXXXX/`
+  - 每个目录对应一个已下载的样本（Run ID），包含实际的测序数据文件。
