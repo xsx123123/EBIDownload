@@ -146,6 +146,15 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 
 # 下载多个指定的 Run (空格分隔)
 ./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
+
+# 下载项目中指定的一批 Run (适用于靶向重分析)
+./target/release/EBIDownload -A PRJNA259308 -o ./ -p 6 -d aws \
+  -y /data/jzhang/software/EBIDownload/EBIDownload.yaml \
+  --chunk-size 200 \
+  --filter-run SRR1572540 SRR1572541 SRR1572542 SRR1572398 SRR1572399 \
+  SRR1572621 SRR1572622 SRR1572351 SRR1572352 SRR1572652 SRR1572653 \
+  SRR1572252 SRR1572253 SRR1572493 SRR1572494 SRR1572381 SRR1572382 \
+  SRR1572340 SRR1572341 SRR1572342 SRR1572245 SRR1572251 SRR1572249 SRR1572462
 ```
 
 **3. 标准模式 (Prefetch)**
