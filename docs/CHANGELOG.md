@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.3.6] - 2026-05-25
+
+### Added
+- **Colorful ASCII Logo & Help**: Added a vibrant, multi-colored ASCII art logo to the CLI help output. Help sections are now color-coded (green headers, blue options, cyan placeholders) for better readability.
+- **Unicode Progress Bars**: Replaced plain ASCII progress bars with modern Unicode block characters (`█▓░`) and added spinner animations for a smoother download experience.
+- **Smart File Naming**: Log files, metadata TSV, and MD5 checksum files now automatically include the project Accession ID in their filenames (e.g., `EBIDownload_PRJNA123_...log`, `ena_metadata_PRJNA123.tsv`).
+- **Project Annotation**: `ena_metadata.tsv` now includes a `# Project Accession:` comment header for easy traceability.
+
+### Changed
+- **Progress Bar Layout**: Redesigned progress bar template to show percentage, aligned byte counters, speed, and ETA in a clean, compact format.
+- **Download Completion Messages**: Results (speed, MD5 verification) are now written to both the terminal and the log file via `tracing`.
+- **Help Output Grouping**: CLI arguments are now organized into `Input Options`, `Download Options`, `Filters`, and `Advanced Options` sections.
+
+### Fixed
+- **Cargo.toml Localization**: Removed Chinese comments from `Cargo.toml` in favor of English.
+
 ## [1.3.5] - 2025-12-27
 
 ### Added

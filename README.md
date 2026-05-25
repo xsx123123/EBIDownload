@@ -17,6 +17,8 @@ EBIDownload is a command-line tool developed in Rust for efficiently downloading
 - **Resumable Downloads**: Supports resumable downloads in `aws`, `ascp` and `prefetch` modes, ensuring download continuity.
 - **Smart Auto-Fallback**: Automatically attempts AWS S3 first and seamlessly switches to Prefetch if the AWS download fails (Mode: `auto`).
 - **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
+- **Enhanced UI/UX**: Modern Unicode progress bars with spinner animations, colorful ASCII logo, and grouped help output.
+- **Smart File Naming**: Log files, metadata TSV, and MD5 checksum files automatically include the project Accession ID for easy organization.
 
 ---
 
@@ -210,18 +212,22 @@ After the script runs, the output directory will contain the following files and
 
 ```
 .
-├── EBIDownload_EMBI-ENA_Download_YYYY-MM-DD_HH-MM-SS.log
-├── R1_fastq_md5.tsv
-├── R2_fastq_md5.tsv
+├── EBIDownload_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log
+├── ena_metadata_{ACCESSION}.tsv
+├── R1_fastq_md5_{ACCESSION}.tsv
+├── R2_fastq_md5_{ACCESSION}.tsv
 ├── SRRXXXXXX/
 │   └── ... (downloaded files)
 └── ...
 ```
 
-- **Log File**: `EBIDownload_EMBI-ENA_Download_... .log`
-  - Records the detailed execution log of the script.
+- **Log File**: `EBIDownload_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log`
+  - Records the detailed execution log of the script, with the Accession ID in the filename for easy identification.
 
-- **MD5 Checksum Files**: `R1_fastq_md5.tsv` and `R2_fastq_md5.tsv`
+- **Metadata File**: `ena_metadata_{ACCESSION}.tsv`
+  - Contains all fetched and filtered metadata from the EBI API, with a header comment indicating the source project.
+
+- **MD5 Checksum Files**: `R1_fastq_md5_{ACCESSION}.tsv` and `R2_fastq_md5_{ACCESSION}.tsv`
   - These files contain the official MD5 checksums and sample names retrieved from the EBI database for the downloaded FASTQ files (R1 and R2 reads, respectively). You can use these files to verify the integrity of your downloaded data.
 
 - **Sample Directories**: `SRRXXXXXX/`

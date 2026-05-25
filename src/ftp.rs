@@ -103,9 +103,9 @@ pub async fn process_downloads(
             let pb = if t_size > 0 {
                 let p = mp.add(ProgressBar::new(t_size));
                 // Style: [Prefix] Spinner [Bar] Downloaded/Total (Percent%) Message
-                p.set_style(ProgressStyle::with_template("{prefix:.bold.dim} {spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}")
+                p.set_style(ProgressStyle::with_template("{spinner:.green} {prefix:>15.bold.cyan} ║{bar:30.cyan/blue}║ {percent:>3}% {bytes:>10}/{total_bytes:>10} │ {binary_bytes_per_sec:>10} {msg}")
                     .unwrap()
-                    .progress_chars("##-"));
+                    .progress_chars("█▓░"));
                 p
             } else {
                 let p = mp.add(ProgressBar::new_spinner());

@@ -16,6 +16,7 @@ use tokio::io::AsyncReadExt;
 use std::str;
 use reqwest::{Client, header};
 use futures::StreamExt;
+use tracing::{info, warn};
 
 // ============================
 // 1. Data Structures
@@ -75,7 +76,7 @@ impl SraUtils {
                         if attempt >= max_retries {
                             return Err(anyhow!("NCBI API Error: Status {}", resp.status()));
                         }
-                        eprintln!("⚠️  [Network] NCBI Server Error ({}), retrying ({}/{})...", resp.status(), attempt, max_retries);
+                        warn!("⚠️  [Network] NCBI Server Error ({}), retrying ({}/{})...", resp.status(), attempt, max_retries);
                     }
                 },
                 Err(e) => {
@@ -83,7 +84,7 @@ impl SraUtils {
                         return Err(anyhow!("Failed to connect to NCBI after {} attempts: {}", max_retries, e));
                     }
                     // 🟢 Modification 3: Retry wait time increased to 10 seconds (more stable)
-                    eprintln!("⚠️  [Network] Connection failed: {}. Retrying in 10s ({}/{})...", e, attempt, max_retries);
+                    warn!("⚠️  [Network] Connection failed: {}. Retrying in 10s ({}/{})...", e, attempt, max_retries);
                 }
             }
 
@@ -261,21 +262,29 @@ impl ResumableDownloader {
         } else {
              ProgressBar::new(self.metadata.size)
         };
-        pb.set_style(ProgressStyle::default_bar().template("{prefix:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({binary_bytes_per_sec}, {eta}) {msg}")?.progress_chars("#>-"));
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} {prefix:>15.bold.cyan} ║{bar:30.cyan/blue}║ {percent:>3}% {bytes:>10}/{total_bytes:>10} │ {binary_bytes_per_sec:>10} │ ETA {eta_precise:>8} {msg}")?
+                .progress_chars("█▓░")
+        );
         pb.set_prefix(self.run_id.clone());
+        pb.enable_steady_tick(std::time::Duration::from_millis(100));
         
-        // 🟢 Print details using pb.println to avoid interfering with bars
+        // 🟢 Print compact details above the progress bar
+        let size_gb = self.metadata.size as f64 / 1024.0 / 1024.0 / 1024.0;
         let details = format!(
-            "\n📌 [Details] {}\n   ├─ 📦 Size: {:.2} GB\n   ├─ 🔑 MD5 : {}\n   └─ 💾 Save: {}\n", 
+            "📌 {} │ 📦 {:.2} GB │ 🔑 {} │ 💾 {}", 
             self.run_id,
-            self.metadata.size as f64 / 1024.0 / 1024.0 / 1024.0,
-            self.metadata.md5.as_deref().unwrap_or("Unknown"),
+            size_gb,
+            self.metadata.md5.as_deref().unwrap_or("N/A"),
             self.filepath.display()
         );
         pb.println(details);
 
         if tasks.is_empty() {
-            pb.println(format!("   ✅ File exists, starting integrity check: {}", self.run_id));
+            let msg = format!("✅ {} │ File exists, starting integrity check...", self.run_id);
+            pb.println(&msg);
+            info!("{}", msg);
             pb.finish_and_clear();
             return self.verify_integrity(start_time.elapsed().as_secs_f64(), true).await;
         }
@@ -337,15 +346,18 @@ impl ResumableDownloader {
         if downloaded_chunks.len() as u64 == num_chunks {
             self.verify_integrity(start_time.elapsed().as_secs_f64(), false).await
         } else {
-            pb.println("❌ Download incomplete. Progress saved, please retry.");
+            let msg = format!("❌ {} │ Download incomplete. Progress saved, please retry.", self.run_id);
+            pb.println(&msg);
+            warn!("{}", msg);
             Ok(false)
         }
     }
     async fn verify_integrity(&self, download_duration: f64, skipped_download: bool) -> Result<bool> {
         let start_time = std::time::Instant::now();
         if self.metadata.md5.is_none() { 
-            let msg = "   ⚠️ No MD5 info, skipping verification";
-            if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
+            let msg = format!("⚠️ {} │ No MD5 info, skipping verification", self.run_id);
+            if let Some(mp) = &self.mp { let _ = mp.println(&msg); } else { println!("{}", msg); }
+            warn!("{}", msg);
             return Ok(true); 
         }
         
@@ -355,7 +367,13 @@ impl ResumableDownloader {
              ProgressBar::new(self.metadata.size)
         };
         
-        pb.set_style(ProgressStyle::default_bar().template("🔍 Verifying [{bar:40.green/white}] {bytes}/{total_bytes} ({binary_bytes_per_sec})")?.progress_chars("##-"));
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.yellow} {prefix:>15.bold.yellow} ║{bar:30.green/white}║ {percent:>3}% {bytes:>10}/{total_bytes:>10} │ {binary_bytes_per_sec:>10} │ 🔍 Verifying {msg}")?
+                .progress_chars("█▓░")
+        );
+        pb.set_prefix(self.run_id.clone());
+        pb.enable_steady_tick(std::time::Duration::from_millis(100));
         
         let mut file = tokio::fs::File::open(&self.filepath).await?;
         let mut ctx = md5::Context::new();
@@ -373,17 +391,17 @@ impl ResumableDownloader {
         if &local_md5 == expected_md5 {
             if !skipped_download {
                let speed = (self.metadata.size as f64 / 1024.0 / 1024.0) / download_duration;
-               let msg = format!("   └─ 🚀 Download speed: {:.2} MB/s", speed);
-               if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
+               let msg = format!("✅ {} │ 🚀 {:.2} MB/s", self.run_id, speed);
+               info!("{}", msg);
             }
-            let msg = format!("   └─ ✅ MD5 verified (Time: {:.2}s)", start_time.elapsed().as_secs_f64());
-            if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
+            let msg = format!("✅ {} │ 🔍 MD5 OK ({:.2}s)", self.run_id, start_time.elapsed().as_secs_f64());
+            info!("{}", msg);
             
             let _ = std::fs::remove_file(&self.meta_file);
             Ok(true)
         } else {
-            let msg = format!("   └─ ❌ MD5 verification failed!\n      Local: {}\n      Remote: {}", local_md5, expected_md5);
-            if let Some(mp) = &self.mp { let _ = mp.println(msg); } else { println!("{}", msg); }
+            let msg = format!("❌ {} │ MD5 mismatch! Local: {}  Remote: {}", self.run_id, local_md5, expected_md5);
+            warn!("{}", msg);
             Ok(false)
         }
     }

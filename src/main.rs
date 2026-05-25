@@ -20,46 +20,85 @@ mod aws_s3;
 mod ftp;
 mod prefetch;
 
-const VERSION: &str = "1.3.5";
+const VERSION: &str = "1.3.6";
 const SCRIPT_NAME: &str = "EBIDownload";
 
+use clap::builder::styling::{AnsiColor, Effects, Styles};
+
+const HELP_LOGO: &str = "\x1b[1;36m    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗ \x1b[0m\n\
+\x1b[1;36m    ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗\x1b[0m\n\
+\x1b[1;32m    █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║\x1b[0m\n\
+\x1b[1;32m    ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║\x1b[0m\n\
+\x1b[1;34m    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝\x1b[0m\n\
+\x1b[1;34m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ \x1b[0m\n\
+                                                                          \n\
+\x1b[1;33m              🧬  EMBL-ENA Data Downloader  |  v1.3.5\x1b[0m";
+
+const HELP_STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Blue.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default())
+    .error(AnsiColor::Red.on_default().effects(Effects::BOLD))
+    .valid(AnsiColor::Green.on_default())
+    .invalid(AnsiColor::Yellow.on_default());
+
 #[derive(Parser, Debug)]
-#[command(author, version = VERSION, about = "Download EMBL-ENA sequencing data", long_about = None)]
+#[command(
+    author,
+    version = VERSION,
+    about = "Download EMBL-ENA sequencing data",
+    long_about = None,
+    color = clap::ColorChoice::Always,
+    styles = HELP_STYLES,
+    before_help = HELP_LOGO,
+    help_template = r#"{before-help}
+
+{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}
+"#
+)]
 struct Args {
-    #[arg(short = 'A', long)]
+    #[arg(short = 'A', long, value_name = "ID", help = "ENA project accession, e.g. PRJNA12345", help_heading = "Input Options")]
     accession: Option<String>,
-    #[arg(short = 'T', long)]
+    #[arg(short = 'T', long, value_name = "FILE", help = "Path to a TSV file with run list", help_heading = "Input Options")]
     tsv: Option<PathBuf>,
-    #[arg(short, long)]
+
+    #[arg(short, long, value_name = "DIR", help = "Output directory for downloaded data", help_heading = "Input Options")]
     output: PathBuf,
-    #[arg(short = 'p', long, default_value = "4", help = "File-level concurrency: Number of files downloaded simultaneously")]
-    multithreads: usize,
-    #[arg(short, long, default_value = "aws")]
+
+    #[arg(short, long, default_value = "aws", help_heading = "Download Options")]
     download: DownloadMethod,
-    #[arg(short = 'O', long, default_value = "false")]
+    #[arg(short = 'O', long, default_value = "false", help = "Generate scripts only, do not download", help_heading = "Download Options")]
     only_scripts: bool,
-    #[arg(short, long, default_value = "EBIDownload.yaml")]
-    yaml: PathBuf,
-    #[arg(long, default_value = "info")]
-    log_level: String,
-    #[arg(long, default_value = "text", help = "Log format: text or json")]
-    log_format: LogFormat,
-    #[arg(long = "filter-sample", num_args = 1..)]
-    filter_sample: Vec<String>,
-    #[arg(long = "filter-run", num_args = 1..)]
-    filter_run: Vec<String>,
-    #[arg(long = "exclude-sample", num_args = 1..)]
-    exclude_sample: Vec<String>,
-    #[arg(long = "exclude-run", num_args = 1..)]
-    exclude_run: Vec<String>,
-    #[arg(short = 't', long = "aws-threads", default_value = "8", help = "AWS/Prefetch only: Threads for internal chunk download or conversion per file")]
+    #[arg(short = 'p', long, default_value = "4", help = "File-level concurrency", help_heading = "Download Options")]
+    multithreads: usize,
+    #[arg(short = 't', long = "aws-threads", default_value = "8", help = "Threads per file (AWS/Prefetch)", help_heading = "Download Options")]
     aws_threads: usize,
-    #[arg(long = "chunk-size", default_value = "20", help = "AWS only: Chunk size (MB)")]
+    #[arg(long = "chunk-size", default_value = "20", help = "Chunk size in MB (AWS only)", help_heading = "Download Options")]
     chunk_size: u64,
-    #[arg(long = "max-size", default_value = "100G", help = "Prefetch only: Max download size limit (e.g., 100G, 50G)")]
+    #[arg(long = "max-size", default_value = "100G", help = "Max size limit (Prefetch only)", help_heading = "Download Options")]
     prefetch_max_size: String,
-    #[arg(long = "pe-only", default_value = "false", help = "Only download Paired-End data, ignore Single-End data")]
+    #[arg(long = "pe-only", default_value = "false", help = "Only download Paired-End data", help_heading = "Download Options")]
     pe_only: bool,
+
+    #[arg(long = "filter-sample", num_args = 1.., help = "Include samples matching regex", help_heading = "Filters")]
+    filter_sample: Vec<String>,
+    #[arg(long = "filter-run", num_args = 1.., help = "Include runs matching regex", help_heading = "Filters")]
+    filter_run: Vec<String>,
+    #[arg(long = "exclude-sample", num_args = 1.., help = "Exclude samples matching regex", help_heading = "Filters")]
+    exclude_sample: Vec<String>,
+    #[arg(long = "exclude-run", num_args = 1.., help = "Exclude runs matching regex", help_heading = "Filters")]
+    exclude_run: Vec<String>,
+
+    #[arg(short, long, default_value = "EBIDownload.yaml", value_name = "FILE", help_heading = "Advanced Options")]
+    yaml: PathBuf,
+    #[arg(long, default_value = "info", help = "Log level: trace/debug/info/warn/error", help_heading = "Advanced Options")]
+    log_level: String,
+    #[arg(long, default_value = "text", help = "Log format: text or json", help_heading = "Advanced Options")]
+    log_format: LogFormat,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -228,7 +267,7 @@ async fn main() {
     let result: Result<()> = async {
         let args = Args::parse();
         fs::create_dir_all(&args.output).context("Failed to create output directory")?;
-        setup_logging(&args.output, &args.log_level, &args.log_format)?;
+        setup_logging(&args.output, &args.log_level, &args.log_format, args.accession.as_deref())?;
         
         print_banner();
         check_network_health().await;
@@ -256,10 +295,10 @@ async fn main() {
             return Ok(());
         }
 
-        save_metadata_tsv(&filtered_records, &args.output)?;
+        save_metadata_tsv(&filtered_records, &args.output, args.accession.as_deref())?;
 
         let processed = process_records(filtered_records, &args)?;
-        save_md5_files(&processed, &args.output)?;
+        save_md5_files(&processed, &args.output, args.accession.as_deref())?;
 
         match args.download {
             DownloadMethod::Ascp => {
@@ -302,12 +341,22 @@ async fn main() {
 }
 
 fn print_banner() {
-    println!("\n{}", "=".repeat(60));
-    println!("  🧬 {} - EMBL-ENA Data Downloader v{}", SCRIPT_NAME, VERSION);
-    println!("{}\n", "=".repeat(60));
+    let logo = format!(
+        r#"
+    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗ 
+    ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗
+    █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║
+    ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║
+    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝
+    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ 
+                                                                          
+              🧬  EMBL-ENA Data Downloader  |  v{}"#,
+        VERSION
+    );
+    println!("{}\n", logo);
 }
 
-fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat) -> Result<()> {
+fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat, accession: Option<&str>) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, Layer};
     struct LocalTimer;
     impl fmt::time::FormatTime for LocalTimer {
@@ -316,7 +365,11 @@ fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat) -> Resu
         }
     }
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let log_name = format!("{}_EBIDownload_{}.log", SCRIPT_NAME, timestamp);
+    let log_name = if let Some(acc) = accession {
+        format!("{}_{}_{}.log", SCRIPT_NAME, acc, timestamp)
+    } else {
+        format!("{}_{}.log", SCRIPT_NAME, timestamp)
+    };
     let log_path = output_dir.join(&log_name);
     let file = File::create(&log_path)?;
     
@@ -464,10 +517,19 @@ fn process_records(records: Vec<EnaRecord>, args: &Args) -> Result<Vec<Processed
     Ok(processed)
 }
 
-fn save_md5_files(records: &[ProcessedRecord], output_dir: &Path) -> Result<()> {
+fn save_md5_files(records: &[ProcessedRecord], output_dir: &Path, accession: Option<&str>) -> Result<()> {
     info!("💾 Saving MD5 files to {}...", output_dir.display());
-    let r1_path = output_dir.join("R1_fastq_md5.tsv");
-    let r2_path = output_dir.join("R2_fastq_md5.tsv");
+    let (r1_path, r2_path) = if let Some(acc) = accession {
+        (
+            output_dir.join(format!("R1_fastq_md5_{}.tsv", acc)),
+            output_dir.join(format!("R2_fastq_md5_{}.tsv", acc)),
+        )
+    } else {
+        (
+            output_dir.join("R1_fastq_md5.tsv"),
+            output_dir.join("R2_fastq_md5.tsv"),
+        )
+    };
     
     let mut r1_file = File::create(&r1_path)?;
     let mut r2_file = File::create(&r2_path)?;
@@ -482,12 +544,22 @@ fn save_md5_files(records: &[ProcessedRecord], output_dir: &Path) -> Result<()> 
     Ok(())
 }
 
-fn save_metadata_tsv(records: &[EnaRecord], output_dir: &Path) -> Result<()> {
-    let path = output_dir.join("ena_metadata.tsv");
+fn save_metadata_tsv(records: &[EnaRecord], output_dir: &Path, accession: Option<&str>) -> Result<()> {
+    let path = if let Some(acc) = accession {
+        output_dir.join(format!("ena_metadata_{}.tsv", acc))
+    } else {
+        output_dir.join("ena_metadata.tsv")
+    };
     info!("💾 Saving ENA metadata to {}...", path.display());
+    
+    let mut file = File::create(&path)?;
+    if let Some(acc) = accession {
+        writeln!(file, "# Project Accession: {}", acc)?;
+    }
+    
     let mut wtr = WriterBuilder::new()
         .delimiter(b'\t')
-        .from_path(&path)?;
+        .from_writer(file);
         
     for record in records {
         wtr.serialize(record)?;
