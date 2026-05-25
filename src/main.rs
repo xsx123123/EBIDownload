@@ -45,13 +45,13 @@ struct Args {
     #[arg(long, default_value = "text", help = "Log format: text or json")]
     log_format: LogFormat,
     #[arg(long = "filter-sample", num_args = 1..)]
-    filter_sample: Option<Vec<String>>,
+    filter_sample: Vec<String>,
     #[arg(long = "filter-run", num_args = 1..)]
-    filter_run: Option<Vec<String>>,
+    filter_run: Vec<String>,
     #[arg(long = "exclude-sample", num_args = 1..)]
-    exclude_sample: Option<Vec<String>>,
+    exclude_sample: Vec<String>,
     #[arg(long = "exclude-run", num_args = 1..)]
-    exclude_run: Option<Vec<String>>,
+    exclude_run: Vec<String>,
     #[arg(short = 't', long = "aws-threads", default_value = "8", help = "AWS/Prefetch only: Threads for internal chunk download or conversion per file")]
     aws_threads: usize,
     #[arg(long = "chunk-size", default_value = "20", help = "AWS only: Chunk size (MB)")]
@@ -172,27 +172,27 @@ pub struct ProcessedRecord {
 }
 
 struct RegexFilters {
-    include_sample: Option<Regex>,
-    include_run: Option<Regex>,
-    exclude_sample: Option<Regex>,
-    exclude_run: Option<Regex>,
+    include_sample: Vec<Regex>,
+    include_run: Vec<Regex>,
+    exclude_sample: Vec<Regex>,
+    exclude_run: Vec<Regex>,
 }
 
 impl RegexFilters {
     fn new(args: &Args) -> Result<Self> {
         Ok(Self {
-            include_sample: args.filter_sample.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --filter-sample")?,
-            include_run: args.filter_run.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --filter-run")?,
-            exclude_sample: args.exclude_sample.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --exclude-sample")?,
-            exclude_run: args.exclude_run.as_ref().map(|v| Regex::new(&v.join("|"))).transpose().context("Invalid regex pattern for --exclude-run")?,
+            include_sample: args.filter_sample.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-sample")?,
+            include_run: args.filter_run.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-run")?,
+            exclude_sample: args.exclude_sample.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --exclude-sample")?,
+            exclude_run: args.exclude_run.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --exclude-run")?,
         })
     }
 
     fn should_include(&self, record: &EnaRecord) -> bool {
-        if let Some(ref regex) = self.include_sample { if !regex.is_match(&record.sample_title) { return false; } }
-        if let Some(ref regex) = self.include_run { if !regex.is_match(&record.run_accession) { return false; } }
-        if let Some(ref regex) = self.exclude_sample { if regex.is_match(&record.sample_title) { return false; } }
-        if let Some(ref regex) = self.exclude_run { if regex.is_match(&record.run_accession) { return false; } }
+        if !self.include_sample.is_empty() && !self.include_sample.iter().any(|r| r.is_match(&record.sample_title)) { return false; }
+        if !self.include_run.is_empty() && !self.include_run.iter().any(|r| r.is_match(&record.run_accession)) { return false; }
+        if !self.exclude_sample.is_empty() && self.exclude_sample.iter().any(|r| r.is_match(&record.sample_title)) { return false; }
+        if !self.exclude_run.is_empty() && self.exclude_run.iter().any(|r| r.is_match(&record.run_accession)) { return false; }
         true
     }
 }
