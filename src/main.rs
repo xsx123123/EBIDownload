@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::Local;
 use clap::Parser;
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, HumanBytes};
 use csv::{ReaderBuilder, WriterBuilder};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,6 @@ const HELP_STYLES: Styles = Styles::styled()
     styles = HELP_STYLES,
     before_help = HELP_LOGO,
     help_template = r#"{before-help}
-
 {about-with-newline}
 {usage-heading} {usage}
 
@@ -100,6 +99,9 @@ struct Args {
     log_format: LogFormat,
     #[arg(long, default_value = "false", help = "Remove intermediate .sra files after conversion", help_heading = "Advanced Options")]
     cleanup_sra: bool,
+
+    #[arg(long, default_value = "false", help = "Show what would be downloaded without actually downloading", help_heading = "Advanced Options")]
+    dry_run: bool,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -300,6 +302,20 @@ async fn main() {
 
         let processed = process_records(filtered_records, &args)?;
         save_md5_files(&processed, &args.output, args.accession.as_deref())?;
+
+        if args.dry_run {
+            info!("🏜️  Dry Run Mode: Listing files that would be downloaded:");
+            for record in &processed {
+                info!("   📦 [{}]", record.run_accession);
+                info!("      - File 1: {} ({})", record.fastq_ftp_1_name, HumanBytes(record.fastq_bytes_1));
+                
+                if let (Some(name), Some(size)) = (&record.fastq_ftp_2_name, record.fastq_bytes_2) {
+                    info!("      - File 2: {} ({})", name, HumanBytes(size));
+                }
+            }
+            info!("🏜️  Dry Run completed. No files were downloaded.");
+            return Ok(());
+        }
 
         match args.download {
             DownloadMethod::Ascp => {
