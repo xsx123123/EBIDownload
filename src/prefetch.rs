@@ -37,6 +37,7 @@ pub async fn download_all(
     process_threads: usize, 
     max_size: &str, // 🟢 New param: Receive max-size string
     only_scripts: bool,
+    cleanup_sra: bool,
 ) -> Result<()> {
     info!("📦 Starting Prefetch pipeline...");
     info!("⚙️  Config: Parallel Files = {}, Threads/Process = {}, Max Size = {}", file_threads, process_threads, max_size);
@@ -57,6 +58,7 @@ pub async fn download_all(
         let pigz = pigz_bin.to_string();
         let threads = process_threads;
         let max_size_arg = max_size.to_string(); // Clone for thread
+        let cleanup_sra = cleanup_sra;
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -162,6 +164,15 @@ pub async fn download_all(
             if (fq_1.exists() && fq_1.metadata()?.len() > 0) || (fq_single.exists() && fq_single.metadata()?.len() > 0) {
                 info!("📦 [{}] Step 3: Compressing (pigz)...", run_id);
                 run_command(&cmd_compress_str, &output_dir).await.context("pigz failed")?;
+                
+                if cleanup_sra {
+                    if sra_file.exists() {
+                        info!("🧹 [{}] Cleaning up SRA file: {}", run_id, sra_file.display());
+                        if let Err(e) = tokio::fs::remove_file(&sra_file).await {
+                            warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
+                        }
+                    }
+                }
                 
                 info!("✅ [{}] All steps completed!", run_id);
                 Ok(())

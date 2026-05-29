@@ -99,6 +99,8 @@ struct Args {
     log_level: String,
     #[arg(long, default_value = "text", help = "Log format: text or json", help_heading = "Advanced Options")]
     log_format: LogFormat,
+    #[arg(long, default_value = "false", help = "Remove intermediate .sra files after conversion", help_heading = "Advanced Options")]
+    cleanup_sra: bool,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -524,16 +526,23 @@ fn process_records(records: Vec<EnaRecord>, args: &Args) -> Result<Vec<Processed
 }
 
 fn save_md5_files(records: &[ProcessedRecord], output_dir: &Path, accession: Option<&str>) -> Result<()> {
-    info!("💾 Saving MD5 files to {}...", output_dir.display());
+    let save_dir = if let Some(acc) = accession {
+        let meta_dir = output_dir.join(format!("{}_metadata", acc));
+        fs::create_dir_all(&meta_dir)?;
+        meta_dir
+    } else {
+        output_dir.to_path_buf()
+    };
+    info!("💾 Saving MD5 files to {}...", save_dir.display());
     let (r1_path, r2_path) = if let Some(acc) = accession {
         (
-            output_dir.join(format!("R1_fastq_md5_{}.tsv", acc)),
-            output_dir.join(format!("R2_fastq_md5_{}.tsv", acc)),
+            save_dir.join(format!("R1_fastq_md5_{}.tsv", acc)),
+            save_dir.join(format!("R2_fastq_md5_{}.tsv", acc)),
         )
     } else {
         (
-            output_dir.join("R1_fastq_md5.tsv"),
-            output_dir.join("R2_fastq_md5.tsv"),
+            save_dir.join("R1_fastq_md5.tsv"),
+            save_dir.join("R2_fastq_md5.tsv"),
         )
     };
     
@@ -551,10 +560,17 @@ fn save_md5_files(records: &[ProcessedRecord], output_dir: &Path, accession: Opt
 }
 
 fn save_metadata_tsv(records: &[EnaRecord], output_dir: &Path, accession: Option<&str>) -> Result<()> {
-    let path = if let Some(acc) = accession {
-        output_dir.join(format!("ena_metadata_{}.tsv", acc))
+    let save_dir = if let Some(acc) = accession {
+        let meta_dir = output_dir.join(format!("{}_metadata", acc));
+        fs::create_dir_all(&meta_dir)?;
+        meta_dir
     } else {
-        output_dir.join("ena_metadata.tsv")
+        output_dir.to_path_buf()
+    };
+    let path = if let Some(acc) = accession {
+        save_dir.join(format!("ena_metadata_{}.tsv", acc))
+    } else {
+        save_dir.join("ena_metadata.tsv")
     };
     info!("💾 Saving ENA metadata to {}...", path.display());
     
@@ -604,7 +620,7 @@ async fn run_command(cmd: &str, dir: &Path) -> Result<()> {
 
 // Prefetch Entry
 async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, args: &Args) -> Result<()> {
-    prefetch::download_all(records, config, &args.output, args.multithreads, args.aws_threads,&args.prefetch_max_size,args.only_scripts).await
+    prefetch::download_all(records, config, &args.output, args.multithreads, args.aws_threads, &args.prefetch_max_size, args.only_scripts, args.cleanup_sra).await
 }
 
 // AWS Entry (Keep original logic)
@@ -635,6 +651,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
         let fasterq_dump = fasterq_dump_path.clone();
         let pigz = pigz_path.to_string();
         let only_scripts = args.only_scripts;
+        let cleanup_sra = args.cleanup_sra;
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -714,6 +731,17 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                 // However, pigz *.fastq is inherently shell-dependent unless we expand in Rust.
                 // For simplicity/robustness, we keep the run_command (shell) for pigz as it is complex to reimplement globbing.
                 run_command(&cmd_compress, &output_dir).await.context("pigz failed")?;
+                
+                if cleanup_sra {
+                    let sra_path = output_dir.join(&sra_filename);
+                    if sra_path.exists() {
+                        info!("🧹 [{}] Cleaning up SRA file: {}", run_id, sra_path.display());
+                        if let Err(e) = tokio::fs::remove_file(&sra_path).await {
+                            warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
+                        }
+                    }
+                }
+                
                 info!("✅ [{}] All steps completed successfully!", run_id);
                 Ok(())
             } else {
