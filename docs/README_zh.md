@@ -123,7 +123,6 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 | `-o`   | `--output`         | **必需**, 下载文件的输出目录             |             |
 | `-p`   | `--multithreads`   | 并行下载的文件数量                       | 4           |
 | `-d`   | `--download`       | 下载方式 (`aws`, `ascp`, `ftp`, `prefetch`, `auto`) | `aws`       |
-| `-O`   | `--only-scripts`   | 仅生成下载脚本，不执行下载               | `false`     |
 | `-y`   | `--yaml`           | 指定 `EBIDownload.yaml` 配置文件路径     | `EBIDownload.yaml` |
 |        | `--log-level`      | 日志级别 (`debug`, `info`, `warn`, `error`) | `info`      |
 |        | `--log-format`     | 日志输出格式 (`text`, `json`)            | `text`      |
@@ -135,6 +134,8 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 |        | `--filter-run`     | 正则表达式: 仅下载匹配该模式的运行 (run)    |             |
 |        | `--exclude-sample` | 正则表达式: 排除匹配该模式的样本 (sample)   |             |
 |        | `--exclude-run`    | 正则表达式: 排除匹配该模式的运行 (run)      |             |
+|        | `--cleanup-sra`    | 转换后删除中间 .sra 文件                 | `false`     |
+|        | `--dry-run`        | 预览将要下载的内容，不执行实际下载       | `false`     |
 | `-h`   | `--help`           | 打印帮助信息                             |             |
 | `-V`   | `--version`        | 打印版本信息                             |             |
 

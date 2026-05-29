@@ -122,7 +122,6 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 | `-o`  | `--output`       | **Required**, the output directory for downloaded files |              |
 | `-p`  | `--multithreads` | Number of files to download in parallel          | 4            |
 | `-d`  | `--download`     | Download method (`aws`, `ascp`, `ftp`, `prefetch`, `auto`) | `aws`        |
-| `-O`  | `--only-scripts` | Only generate download scripts, do not execute   | `false`      |
 | `-y`  | `--yaml`         | Specify the path to the `EBIDownload.yaml` config file | `EBIDownload.yaml` |
 |       | `--log-level`    | Log level (`debug`, `info`, `warn`, `error`)     | `info`       |
 |       | `--log-format`   | Log output format (`text`, `json`)               | `text`       |
@@ -134,6 +133,8 @@ Usage: EBIDownload [OPTIONS] --output <OUTPUT>
 |       | `--filter-run`   | Regex pattern to include runs matching this      |              |
 |       | `--exclude-sample`| Regex pattern to exclude samples matching this   |              |
 |       | `--exclude-run`  | Regex pattern to exclude runs matching this      |              |
+|       | `--cleanup-sra`  | Remove intermediate .sra files after conversion | `false`      |
+|       | `--dry-run`      | Show what would be downloaded without actually downloading | `false` |
 | `-h`  | `--help`         | Print help information                           |              |
 | `-V`  | `--version`      | Print version information                        |              |
 
