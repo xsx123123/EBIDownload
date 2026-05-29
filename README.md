@@ -24,11 +24,16 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 
 ## 1. Prerequisites and Setup
 
-Before running this program, please ensure you have completed the following environment setup.
+**Why are external dependencies required?**
+Since the raw data downloaded from NCBI/EBI is typically in `.sra` format, it must be converted to standard `.fastq` format and compressed. Because there are currently no mature native Rust libraries available for parsing `.sra` files, this tool relies on external third-party command-line tools to handle these steps. Therefore, you must install the following dependencies before using the tool:
+
+- **`sra-tools` (`prefetch` / `fasterq-dump`)**: Required. `prefetch` is used to download SRA data via standard NCBI protocols. `fasterq-dump` is used to extract and convert `.sra` files into `.fastq` format.
+- **`pigz`**: Required. A parallel implementation of gzip used to quickly compress massive `.fastq` files into `.fastq.gz`, significantly saving storage space.
+- **`aspera-cli` (`ascp`)**: Optional. A high-speed data transfer client by IBM, used as an alternative to traditional FTP/HTTP downloads.
 
 ### a. Conda Environment
 
-This project depends on `sra-tools` (providing `prefetch` and `fasterq-dump`). `aspera-cli` is optional but recommended if you plan to use the Aspera (`ascp`) fallback. We recommend using Conda to create an isolated runtime environment.
+We recommend using Conda to create an isolated runtime environment to easily install `sra-tools` and `aspera-cli`.
 
 ```bash
 # Create and activate the conda environment using the provided .yaml file
@@ -38,7 +43,7 @@ conda activate EBIDownload_env
 
 ### b. Install pigz
 
-`pigz` is a parallel implementation of `gzip` that can significantly speed up file decompression.
+`pigz` is a parallel implementation of `gzip` that can significantly speed up file compression.
 
 - **For Ubuntu/Debian systems:**
   ```bash
