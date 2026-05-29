@@ -310,19 +310,22 @@ async fn main() {
             }
             DownloadMethod::Prefetch => {
                 check_prefetch_config(&config)?;
+                check_fasterq_dump_config(&config)?;
                 download_with_prefetch(&processed, &config, &args).await?;
             }
             DownloadMethod::Aws => {
+                check_fasterq_dump_config(&config)?;
                 download_with_aws(&processed, &config, &args).await?;
             }
             DownloadMethod::Auto => {
                 info!("🤖 Auto Mode: Attempting AWS S3 first...");
+                check_fasterq_dump_config(&config)?;
+                check_prefetch_config(&config)?;
                 // Note: In a full production system, we would track individual file failures.
                 // Here we attempt AWS. If it completes, great.
                 // If the entire batch fails (e.g. API error), we catch it and try Prefetch.
                 if let Err(e) = download_with_aws(&processed, &config, &args).await {
                     warn!("⚠️  AWS S3 download encountered issues: {}. Switching to Prefetch...", e);
-                    check_prefetch_config(&config)?;
                     download_with_prefetch(&processed, &config, &args).await?;
                 }
             }
@@ -753,6 +756,61 @@ async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: 
         args.only_scripts
     ).await
 }
-fn check_prefetch_config(_config: &Config) -> Result<()> { Ok(()) }
-fn check_ascp_config(_config: &Config) -> Result<()> { Ok(()) }
-fn check_pigz_dependency() -> Result<()> { Ok(()) }
+fn check_executable(path: &std::path::Path, name: &str) -> Result<()> {
+    if !path.exists() {
+        return Err(anyhow::anyhow!(
+            "{} not found at configured path: {}. Please check your EBIDownload.yaml configuration.",
+            name,
+            path.display()
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = std::fs::metadata(path)?;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            return Err(anyhow::anyhow!(
+                "{} at {} exists but is not executable. Please check permissions.",
+                name,
+                path.display()
+            ));
+        }
+    }
+    info!("✅ {} check passed: {}", name, path.display());
+    Ok(())
+}
+
+fn check_file_exists(path: &std::path::Path, name: &str) -> Result<()> {
+    if !path.exists() {
+        return Err(anyhow::anyhow!(
+            "{} not found at configured path: {}. Please check your EBIDownload.yaml configuration.",
+            name,
+            path.display()
+        ));
+    }
+    info!("✅ {} check passed: {}", name, path.display());
+    Ok(())
+}
+
+fn check_prefetch_config(config: &Config) -> Result<()> {
+    check_executable(&config.software.prefetch, "prefetch")
+}
+
+fn check_ascp_config(config: &Config) -> Result<()> {
+    check_executable(&config.software.ascp, "ascp")?;
+    check_file_exists(&config.setting.openssh, "Aspera openssh key")
+}
+
+fn check_fasterq_dump_config(config: &Config) -> Result<()> {
+    check_executable(&config.software.fasterq_dump, "fasterq-dump")
+}
+
+fn check_pigz_dependency() -> Result<()> {
+    if which::which("pigz").is_err() {
+        return Err(anyhow::anyhow!(
+            "pigz not found in system PATH. Please install pigz first:\n  Ubuntu/Debian: sudo apt-get install pigz\n  macOS: brew install pigz\n  Or ensure pigz is in your PATH."
+        ));
+    }
+    info!("✅ pigz check passed");
+    Ok(())
+}
