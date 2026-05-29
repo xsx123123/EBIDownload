@@ -61,7 +61,7 @@ const HELP_STYLES: Styles = Styles::styled()
 "#
 )]
 struct Args {
-    #[arg(short = 'A', long, value_name = "ID", help = "ENA project accession, e.g. PRJNA12345", help_heading = "Input Options")]
+    #[arg(short = 'A', long, value_name = "ID", help = "ENA project accession, e.g. PRJNA1251654", help_heading = "Input Options")]
     accession: Option<String>,
     #[arg(short = 'T', long, value_name = "FILE", help = "Path to a TSV file with run list", help_heading = "Input Options")]
     tsv: Option<PathBuf>,
@@ -267,9 +267,9 @@ async fn main() {
     let result: Result<()> = async {
         let args = Args::parse();
         fs::create_dir_all(&args.output).context("Failed to create output directory")?;
-        setup_logging(&args.output, &args.log_level, &args.log_format, args.accession.as_deref())?;
-        
         print_banner();
+        
+        setup_logging(&args.output, &args.log_level, &args.log_format, args.accession.as_deref())?;
         check_network_health().await;
         check_pigz_dependency().context("pigz dependency check failed")?;
 
@@ -382,7 +382,10 @@ fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat, accessi
         .with_timer(fmt::time::LocalTime::rfc_3339())
         .with_filter(EnvFilter::new("debug"));
 
-    let stdout_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
+    let mut stdout_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
+    if let Ok(directive) = "download_detail=off".parse() {
+        stdout_filter = stdout_filter.add_directive(directive);
+    }
     
     match format {
         LogFormat::Json => {

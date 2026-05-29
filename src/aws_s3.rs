@@ -279,7 +279,8 @@ impl ResumableDownloader {
             self.metadata.md5.as_deref().unwrap_or("N/A"),
             self.filepath.display()
         );
-        pb.println(details);
+        pb.println(&details);
+        info!(target: "download_detail", "{}", details);
 
         if tasks.is_empty() {
             let msg = format!("✅ {} │ File exists, starting integrity check...", self.run_id);

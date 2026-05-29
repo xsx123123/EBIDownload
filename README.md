@@ -3,22 +3,22 @@
 
 # EBIDownload
 
-EBIDownload is a command-line tool developed in Rust for efficiently downloading sequencing data from the European Bioinformatics Institute (EBI) FTP server and NCBI SRA. This tool utilizes **AWS S3 global acceleration** and the [IBM Aspera CLI](https://www.ibm.com/aspera/connect/) to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also employs [pigz](https://zlib.net/pigz/) for parallel decompression, significantly improving data acquisition efficiency.
+EBIDownload is a command-line tool developed in Rust for efficiently downloading sequencing data from the European Bioinformatics Institute (EBI) FTP server and NCBI SRA. By default, it utilizes **AWS S3 global acceleration** to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also employs [pigz](https://zlib.net/pigz/) for parallel decompression, significantly improving data acquisition efficiency.
+
+In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high-speed download method, which can be selected via the `-d ascp` flag. To use this fallback, you must configure the Aspera path and key in the `EBIDownload.yaml` file (see [Configuration File](#3-configuration-file)).
 
 ![EBIDownload](./docs/download.gif)
 
 ## Features
 
 - **AWS S3 Acceleration (Most Recommended)**: Direct multi-threaded downloading from NCBI SRA AWS S3 buckets, maximizing bandwidth utilization for global high-speed access. This is the fastest and most reliable method for large-scale data acquisition.
-- **High-Speed Download**: Integrates Aspera CLI to overcome traditional FTP/HTTP speed limits.
+- **Aspera Fallback (Alternative)**: Integrates Aspera CLI (`ascp`) as an alternative high-speed channel when AWS S3 is unavailable or not preferred.
 - **Parallel Processing**: Supports multi-threaded downloading and decompression.
 - **Easy Configuration**: Manages software paths and keys through a simple YAML file.
 - **Flexible Usage**: Supports direct downloads via project accession numbers.
 - **Resumable Downloads**: Supports resumable downloads in `aws`, `ascp` and `prefetch` modes, ensuring download continuity.
 - **Smart Auto-Fallback**: Automatically attempts AWS S3 first and seamlessly switches to Prefetch if the AWS download fails (Mode: `auto`).
 - **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
-- **Enhanced UI/UX**: Modern Unicode progress bars with spinner animations, colorful ASCII logo, and grouped help output.
-- **Smart File Naming**: Log files, metadata TSV, and MD5 checksum files automatically include the project Accession ID for easy organization.
 
 ---
 
@@ -28,7 +28,7 @@ Before running this program, please ensure you have completed the following envi
 
 ### a. Conda Environment
 
-This project depends on `sra-tools` (providing `prefetch` and `fasterq-dump`) and `aspera-cli`. We recommend using Conda to create an isolated runtime environment.
+This project depends on `sra-tools` (providing `prefetch` and `fasterq-dump`). `aspera-cli` is optional but recommended if you plan to use the Aspera (`ascp`) fallback. We recommend using Conda to create an isolated runtime environment.
 
 ```bash
 # Create and activate the conda environment using the provided .yaml file
@@ -75,9 +75,9 @@ The compiled executable will be located at `target/release/EBIDownload`.
 
 ## 3. Configuration File
 
-This program uses a YAML file (defaulting to `EBIDownload.yaml`) to configure the paths for required software and the Aspera key.
+This program uses a YAML file (defaulting to `EBIDownload.yaml`) to configure the paths for external tools, including the Aspera CLI (`ascp`) and `sra-tools` (`prefetch`, `fasterq-dump`).
 
-You need to **manually create** this file and fill in the correct absolute paths according to your system environment.
+You need to **manually create** this file and fill in the correct absolute paths according to your system environment. Even if you primarily use the default **AWS S3** mode, it is recommended to configure the Aspera path and key so that the `ascp` fallback is ready when needed.
 
 Below is the standard format for the `EBIDownload.yaml` file:
 
@@ -93,8 +93,8 @@ setting:
 
 **Important Notes**:
 - The `software` section must point to the absolute paths of the `ascp`, `prefetch`, and `fasterq-dump` executables.
-- The `openssh` key in the `setting` section must point to the absolute path of the key file provided by Aspera Connect (`asperaweb_id_dsa.openssh`).
-- Ensure all paths are correct, or the program will not run properly.
+- The `openssh` key in the `setting` section must point to the absolute path of the key file provided by Aspera Connect (`asperaweb_id_dsa.openssh`). This is required when using the Aspera (`ascp`) download mode.
+- Ensure all paths are correct, or the program will not run properly in the corresponding download mode.
 
 ---
 
@@ -151,14 +151,14 @@ You can use `--filter-run` or `--filter-sample` to download specific data.
 
 ```bash
 # Download a specific Run from a project
-./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws -y /data/jzhang/software/EBIDownload/EBIDownload.yaml --chunk-size 200 --filter-run SRR19019104
+./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws -y ./EBIDownload.yaml --chunk-size 200 --filter-run SRR19019104
 
 # Download multiple specified Runs (separated by spaces)
 ./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
 
 # Download a list of specific Runs from a project (useful for targeted re-analysis)
 ./target/release/EBIDownload -A PRJNA259308 -o ./ -p 6 -d aws \
-  -y /data/jzhang/software/EBIDownload/EBIDownload.yaml \
+  -y ./EBIDownload.yaml \
   --chunk-size 200 \
   --filter-run SRR1572540 SRR1572541 SRR1572542 
 ```
