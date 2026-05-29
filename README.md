@@ -7,7 +7,7 @@ EBIDownload is a command-line tool developed in Rust for efficiently downloading
 
 In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high-speed download method, which can be selected via the `-d ascp` flag. To use this fallback, you must configure the Aspera path and key in the `EBIDownload.yaml` file (see [Configuration File](#3-configuration-file)).
 
-![EBIDownload](./docs/download.gif)
+![EBIDownload](./docs/Download.png)
 
 ## Features
 

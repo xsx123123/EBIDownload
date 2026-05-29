@@ -1,4 +1,4 @@
-use crate::{Config, ProcessedRecord, create_script};
+use crate::{Config, ProcessedRecord};
 use anyhow::{anyhow, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::Path;
@@ -22,7 +22,6 @@ pub async fn process_downloads(
     output_dir: &Path,
     protocol: Protocol,
     threads: usize,
-    only_scripts: bool,
 ) -> Result<()> {
     info!("🚀 Starting {:?} download pipeline with {} threads...", 
         match protocol { Protocol::Ftp => "FTP", Protocol::Ascp => "Aspera" }, 
@@ -40,7 +39,6 @@ pub async fn process_downloads(
         url: String,
         md5: String,
         filename: String,
-        run_id: String,
         total_size: u64, // 🟢 Added: Total size
     }
     
@@ -50,7 +48,6 @@ pub async fn process_downloads(
             url: record.fastq_ftp_1_url.clone(),
                             md5: record.fastq_md5_1.clone(),
                         filename: record.fastq_ftp_1_name.clone(),
-                        run_id: record.run_accession.clone(),
                         total_size: record.fastq_bytes_1, // 🟢 Pass size
                     });
                     if let (Some(url), Some(md5), Some(name), Some(size)) = (&record.fastq_ftp_2_url, &record.fastq_md5_2, &record.fastq_ftp_2_name, record.fastq_bytes_2) {
@@ -58,7 +55,6 @@ pub async fn process_downloads(
                             url: url.clone(),
                             md5: md5.clone(),
                             filename: name.clone(),
-                            run_id: record.run_accession.clone(),
                             total_size: size, // 🟢 Pass size
                         });
                     }
@@ -67,12 +63,10 @@ pub async fn process_downloads(
         let sem = semaphore.clone();
         let mp = mp.clone();
         let output_dir = output_dir.to_path_buf();
-        let only_scripts = only_scripts;
         
         let t_url = task.url.clone();
         let t_md5 = task.md5.clone();
         let t_file = task.filename.clone();
-        let t_run = task.run_id.clone();
         let t_size = task.total_size; // 🟢
         
         let (cmd_bin, cmd_args, cmd_string_for_script) = match protocol {
@@ -117,13 +111,6 @@ pub async fn process_downloads(
             
             pb.set_prefix(format!("[{}]", t_file));
             pb.enable_steady_tick(Duration::from_millis(120));
-
-            if only_scripts {
-                pb.set_message("📝 Generating script...");
-                let _ = create_script(&output_dir, &t_run, &cmd_string_for_script);
-                pb.finish_with_message("📝 Script Created");
-                return Ok(());
-            }
 
             let output_file_path = output_dir.join(&t_file);
 

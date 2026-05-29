@@ -71,8 +71,7 @@ struct Args {
 
     #[arg(short, long, default_value = "aws", help_heading = "Download Options")]
     download: DownloadMethod,
-    #[arg(short = 'O', long, default_value = "false", help = "Generate scripts only, do not download", help_heading = "Download Options")]
-    only_scripts: bool,
+
     #[arg(short = 'p', long, default_value = "4", help = "File-level concurrency", help_heading = "Download Options")]
     multithreads: usize,
     #[arg(short = 't', long = "aws-threads", default_value = "8", help = "Threads per file (AWS/Prefetch)", help_heading = "Download Options")]
@@ -620,7 +619,7 @@ async fn run_command(cmd: &str, dir: &Path) -> Result<()> {
 
 // Prefetch Entry
 async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, args: &Args) -> Result<()> {
-    prefetch::download_all(records, config, &args.output, args.multithreads, args.aws_threads, &args.prefetch_max_size, args.only_scripts, args.cleanup_sra).await
+    prefetch::download_all(records, config, &args.output, args.multithreads, args.aws_threads, &args.prefetch_max_size, args.cleanup_sra).await
 }
 
 // AWS Entry (Keep original logic)
@@ -650,7 +649,6 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
         let chunk_size = chunk_size_mb;
         let fasterq_dump = fasterq_dump_path.clone();
         let pigz = pigz_path.to_string();
-        let only_scripts = args.only_scripts;
         let cleanup_sra = args.cleanup_sra;
 
         let handle = tokio::spawn(async move {
@@ -670,26 +668,16 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                     Some(mp),
                 ).await?;
 
-                if !only_scripts {
-                    let success = downloader.start().await?;
-                    if !success {
-                        return Err(anyhow::anyhow!("Download failed for {}", run_id));
-                    }
+                let success = downloader.start().await?;
+                if !success {
+                    return Err(anyhow::anyhow!("Download failed for {}", run_id));
                 }
             } else {
                 warn!("❌ [{}] No AWS S3 URI found", run_id);
                 return Err(anyhow::anyhow!("No S3 URI for {}", run_id));
             }
 
-            let cmd_convert = format!("{} --split-3 -e {} -O . {} -f", fasterq_dump, process_threads, sra_filename);
             let cmd_compress = format!("{} -p {} {}*.fastq", pigz, process_threads, run_id);
-
-            if only_scripts {
-                let full_script = format!("{}\n{}", cmd_convert, cmd_compress);
-                create_script(&output_dir, &run_id, &full_script)?;
-                info!("📝 [{}] Script generated", run_id);
-                return Ok(());
-            }
 
             // Smart check: If FASTQ file exists and is not empty, skip conversion
             let fq_1 = output_dir.join(format!("{}_1.fastq", run_id));
@@ -768,8 +756,7 @@ async fn download_with_ftp(records: &[ProcessedRecord], config: &Config, args: &
         config, 
         &args.output, 
         ftp::Protocol::Ftp, 
-        args.multithreads, 
-        args.only_scripts
+        args.multithreads
     ).await
 }
 
@@ -780,8 +767,7 @@ async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: 
         config, 
         &args.output, 
         ftp::Protocol::Ascp, 
-        args.multithreads, 
-        args.only_scripts
+        args.multithreads
     ).await
 }
 fn check_executable(path: &std::path::Path, name: &str) -> Result<()> {

@@ -1,4 +1,4 @@
-use crate::{Config, ProcessedRecord, create_script};
+use crate::{Config, ProcessedRecord};
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Stdio;
@@ -36,7 +36,6 @@ pub async fn download_all(
     file_threads: usize,    
     process_threads: usize, 
     max_size: &str, // 🟢 New param: Receive max-size string
-    only_scripts: bool,
     cleanup_sra: bool,
 ) -> Result<()> {
     info!("📦 Starting Prefetch pipeline...");
@@ -68,40 +67,11 @@ pub async fn download_all(
             let sra_dir = output_dir.join(&run_id);
             let sra_file = sra_dir.join(format!("{}.sra", run_id));
             
-            // --- Command Construction (Strings for Script) ---
-            
-            // 1. Prefetch String
-            let cmd_prefetch_str = format!(
-                "{} {} -O . --max-size {} --verify yes --force no",
-                prefetch, run_id, max_size_arg
-            );
-
-            // 2. Convert String
             let relative_sra_path = format!("{}/{}.sra", run_id, run_id);
-            let cmd_convert_str = format!(
-                "{} --split-3 -e {} -O . {} -f",
-                fasterq_dump, threads, relative_sra_path
-            );
-
-            // 3. Compress String
             let cmd_compress_str = format!(
                 "{} -p {} {}*.fastq",
                 pigz, threads, run_id
             );
-
-            // --- Script Generation Mode ---
-            if only_scripts {
-                let full_script = format!(
-                    "cd {}\n{}\n{}\n{}", 
-                    output_dir.display(),
-                    cmd_prefetch_str, 
-                    cmd_convert_str, 
-                    cmd_compress_str
-                );
-                create_script(&output_dir, &run_id, &full_script)?;
-                info!("📝 [{}] Script generated", run_id);
-                return Ok(());
-            }
 
             // --- Execution Flow ---
             
@@ -125,7 +95,7 @@ pub async fn download_all(
 
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    error!("❌ Prefetch failed: {}\nError: {}", cmd_prefetch_str, stderr);
+                    error!("❌ Prefetch failed for {}\nError: {}", run_id, stderr);
                     return Err(anyhow::anyhow!("Prefetch failed"));
                 }
             }
