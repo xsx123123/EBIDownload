@@ -282,7 +282,7 @@ impl ResumableDownloader {
         if tasks.is_empty() {
             let msg = format!("✅ {} │ File exists, starting integrity check...", self.run_id);
             pb.println(&msg);
-            info!("{}", msg);
+            info!(target: "download_detail", "{}", msg);
             pb.finish_and_clear();
             return self.verify_integrity(start_time.elapsed().as_secs_f64(), true).await;
         }
@@ -387,11 +387,11 @@ impl ResumableDownloader {
             if !skipped_download {
                let speed = (self.metadata.size as f64 / 1024.0 / 1024.0) / download_duration;
                let msg = format!("✅ {} │ 🚀 {:.2} MB/s", self.run_id, speed);
-               info!("{}", msg);
+               info!(target: "download_detail", "{}", msg);
             }
             let msg = format!("✅ {} │ 🔍 MD5 OK ({:.2}s)", self.run_id, start_time.elapsed().as_secs_f64());
-            info!("{}", msg);
-            
+            info!(target: "download_detail", "{}", msg);
+
             let _ = std::fs::remove_file(&self.meta_file);
             Ok(true)
         } else {

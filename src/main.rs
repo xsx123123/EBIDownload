@@ -837,9 +837,9 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
 
-            info!("📥 [{}] Step 1: Downloading via AWS S3...", run_id);
             let metadata = aws_s3::SraUtils::get_metadata(&run_id, None).await?;
             let sra_filename = format!("{}.sra", run_id);
+            info!(target: "download_detail", "📥 [{}] Step 1: Downloading via AWS S3...", run_id);
 
             if let Some(sra_metadata) = metadata {
                 let downloader = aws_s3::ResumableDownloader::new(
@@ -869,9 +869,9 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                             (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false));
 
             if fq_exists {
-                info!("⏩ [{}] FASTQ files already exist, skipping conversion.", run_id);
+                info!(target: "download_detail", "⏩ [{}] FASTQ files already exist, skipping conversion.", run_id);
             } else {
-                info!("🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
+                info!(target: "download_detail", "🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
                 // Safe command execution
                 let output = Command::new(&fasterq_dump)
                     .arg("--split-3")
@@ -896,7 +896,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
             if (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) ||
                (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false)) {
 
-                info!("📦 [{}] Step 3: Compressing (pigz)...", run_id);
+                info!(target: "download_detail", "📦 [{}] Step 3: Compressing (pigz)...", run_id);
                 // Pigz with wildcard still needs shell or glob expansion.
                 // Using bash -c here is acceptable for wildcard, but we can make it slightly safer by avoiding string formatting if possible.
                 // However, pigz *.fastq is inherently shell-dependent unless we expand in Rust.
@@ -906,14 +906,14 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                 if cleanup_sra {
                     let sra_path = output_dir.join(&sra_filename);
                     if sra_path.exists() {
-                        info!("🧹 [{}] Cleaning up SRA file: {}", run_id, sra_path.display());
+                        info!(target: "download_detail", "🧹 [{}] Cleaning up SRA file: {}", run_id, sra_path.display());
                         if let Err(e) = tokio::fs::remove_file(&sra_path).await {
                             warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
                         }
                     }
                 }
 
-                info!("✅ [{}] All steps completed successfully!", run_id);
+                info!("✅ [{}] Done", run_id);
                 Ok(())
             } else {
                 error!("❌ [{}] Conversion failed and no FASTQ output found.", run_id);
