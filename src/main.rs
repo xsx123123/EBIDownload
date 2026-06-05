@@ -22,7 +22,7 @@ mod ftp;
 mod prefetch;
 mod upload;
 
-const VERSION: &str = "1.3.6";
+const VERSION: &str = "1.3.7";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 use clap::builder::styling::{AnsiColor, Effects, Styles};
@@ -34,7 +34,7 @@ const HELP_LOGO: &str = "\n\n\x1b[1;37m    ███████╗████�
 \x1b[1;37m    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝\x1b[0m\n\
 \x1b[1;37m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ \x1b[0m\n\
                                                                           \n\
-\x1b[1;37m              🧬  EMBL-ENA Data Toolkit   |  v1.3.6\x1b[0m";
+\x1b[1;37m              🧬  EMBL-ENA Data Toolkit   |  v1.3.7\x1b[0m";
 
 const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))

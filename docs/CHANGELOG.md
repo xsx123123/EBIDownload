@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.3.7] - 2026-06-05
+
+### Added
+- **Upload Subcommand**: New `upload` subcommand for uploading sequencing data to AWS S3 for fast NCBI SRA submission. Includes:
+  - Concurrent S3 file uploads with progress tracking
+  - Automatic NCBI SRA bucket policy configuration (`--apply-policy`)
+  - SRA metadata template generation (`--metadata-template`)
+  - Region validation with `us-east-1` warning (NCBI hard requirement)
+  - Dry-run preview mode (`--dry-run`)
+- **Subcommand Architecture**: Refactored CLI from flat arguments to `download` / `upload` subcommands using `clap::Subcommand`
+
+### Changed
+- **CLI Structure**: All download commands now require the `download` subcommand prefix (e.g., `EBIDownload download -A PRJNA1251654 -o ./data -d aws`)
+- **Banner Update**: Renamed from "EMBL-ENA Data Downloader" to "EMBL-ENA Data Toolkit" to reflect both download and upload capabilities
+- **Global Options**: `--yaml`, `--log-level`, `--log-format` are now global options shared across subcommands
+
 ## [1.3.6] - 2026-05-25
 
 ### Added

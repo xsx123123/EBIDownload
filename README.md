@@ -119,7 +119,7 @@ According to the program's help information, the correct usage is as follows:
     ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝
     ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ 
 
-              🧬  EMBL-ENA Data Downloader  |  v1.3.6
+              🧬  EMBL-ENA Data Toolkit   |  v1.3.7
 
 
 Download EMBL-ENA sequencing data

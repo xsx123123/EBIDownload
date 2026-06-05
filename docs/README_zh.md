@@ -120,7 +120,7 @@ setting:
     ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝
     ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
 
-              🧬  EMBL-ENA Data Toolkit   |  v1.3.6
+              🧬  EMBL-ENA Data Toolkit   |  v1.3.7
 
 
 Download and upload sequencing data (EBI ENA / NCBI SRA)
@@ -375,7 +375,7 @@ aws s3 rb s3://my-sra-bucket --force
 
 ## 7. 子命令结构说明
 
-从 v1.3.6 版本开始，EBIDownload 采用子命令结构：
+从 v1.3.7 版本开始，EBIDownload 采用子命令结构：
 
 ```bash
 EBIDownload <command> [options]
