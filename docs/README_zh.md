@@ -111,22 +111,34 @@ setting:
 根据程序的帮助信息，正确的使用方式如下：
 
 ```
-./EBIDownload  -h
+./EBIDownload -h
 
-    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗ 
+    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗
     ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗
     █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║
     ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║
     ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝
-    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ 
+    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
 
-              🧬  EMBL-ENA Data Downloader  |  v1.3.6
+              🧬  EMBL-ENA Data Toolkit   |  v1.3.6
 
 
-Download EMBL-ENA sequencing data
+Download and upload sequencing data (EBI ENA / NCBI SRA)
 
-Usage: EBIDownload [OPTIONS] --output <DIR>
+Usage: EBIDownload [OPTIONS] <COMMAND>
 ```
+
+**全局参数**：
+
+| 短参数 | 长参数 | 描述 | 默认值 |
+|--------|--------|------|--------|
+| `-y` | `--yaml` | 指定 `EBIDownload.yaml` 配置文件路径 | `EBIDownload.yaml` |
+| | `--log-level` | 日志级别 (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
+| | `--log-format` | 日志输出格式 (`text`, `json`) | `text` |
+| `-h` | `--help` | 打印帮助信息 | |
+| `-V` | `--version` | 打印版本信息 | |
+
+**下载子命令参数** (`EBIDownload download`)：
 
 | 短参数 | 长参数             | 描述                                     | 默认值      |
 |--------|--------------------|------------------------------------------|-------------|
@@ -135,9 +147,6 @@ Usage: EBIDownload [OPTIONS] --output <DIR>
 | `-o`   | `--output`         | **必需**, 下载文件的输出目录             |             |
 | `-p`   | `--multithreads`   | 并行下载的文件数量                       | 4           |
 | `-d`   | `--download`       | 下载方式 (`aws`, `ascp`, `ftp`, `prefetch`, `auto`) | `aws`       |
-| `-y`   | `--yaml`           | 指定 `EBIDownload.yaml` 配置文件路径     | `EBIDownload.yaml` |
-|        | `--log-level`      | 日志级别 (`debug`, `info`, `warn`, `error`) | `info`      |
-|        | `--log-format`     | 日志输出格式 (`text`, `json`)            | `text`      |
 | `-t`   | `--aws-threads`    | **AWS/Prefetch**: 单文件内部分片下载或转换线程数 | 8           |
 |        | `--chunk-size`     | **AWS 专用**: 分片大小 (MB)              | 20          |
 |        | `--max-size`       | **Prefetch 专用**: 最大下载大小限制 (例如 `100G`) | `100G`      |
@@ -148,8 +157,8 @@ Usage: EBIDownload [OPTIONS] --output <DIR>
 |        | `--exclude-run`    | 正则表达式: 排除匹配该模式的运行 (run)      |             |
 |        | `--cleanup-sra`    | 转换后删除中间 .sra 文件                 | `false`     |
 |        | `--dry-run`        | 预览将要下载的内容，不执行实际下载       | `false`     |
-| `-h`   | `--help`           | 打印帮助信息                             |             |
-| `-V`   | `--version`        | 打印版本信息                             |             |
+
+**上传子命令参数** (`EBIDownload upload`)：详见 [第 6 节](#6-通过-aws-s3-上传数据至-ncbi-sra)。
 
 **注意**: `-A` 和 `-T` 选项通常互斥，用于指定要下载的数据源。
 
@@ -161,7 +170,7 @@ Usage: EBIDownload [OPTIONS] --output <DIR>
 
 ```bash
 # 使用 AWS S3 模式下载，每个文件开启 8 线程分片下载，同时下载 4 个文件
-./target/release/EBIDownload -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
+./target/release/EBIDownload download -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
 ```
 
 **2. 过滤模式**
@@ -170,13 +179,13 @@ Usage: EBIDownload [OPTIONS] --output <DIR>
 
 ```bash
 # 下载指定项目中的特定 Run (单个)
-./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws -y /data/jzhang/software/EBIDownload/EBIDownload.yaml --chunk-size 200 --filter-run SRR19019104
+./target/release/EBIDownload download -A PRJNA833659 -o ./ -p 6 -d aws -y /data/jzhang/software/EBIDownload/EBIDownload.yaml --chunk-size 200 --filter-run SRR19019104
 
 # 下载多个指定的 Run (空格分隔)
-./target/release/EBIDownload -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
+./target/release/EBIDownload download -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
 
 # 下载项目中指定的一批 Run (适用于靶向重分析)
-./target/release/EBIDownload -A PRJNA259308 -o ./ -p 6 -d aws \
+./target/release/EBIDownload download -A PRJNA259308 -o ./ -p 6 -d aws \
   -y /data/jzhang/software/EBIDownload/EBIDownload.yaml \
   --chunk-size 200 \
   --filter-run SRR1572540 SRR1572541 SRR1572542 
@@ -191,7 +200,7 @@ Usage: EBIDownload [OPTIONS] --output <DIR>
 # conda activate EBIDownload_env
 
 # 示例命令:
-./target/release/EBIDownload -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
+./target/release/EBIDownload download -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
 ```
 
 ---
@@ -248,3 +257,143 @@ Usage: EBIDownload [OPTIONS] --output <DIR>
 
 - **样本目录**: `SRRXXXXXX/`
   - 每个目录对应一个已下载的样本（Run ID），包含实际的测序数据文件。
+
+---
+
+## 6. 通过 AWS S3 上传数据至 NCBI SRA
+
+除了下载功能外，EBIDownload 还支持**将测序数据上传至 AWS S3**，用于快速提交到 NCBI SRA。当你需要提交大量数据（数百 GB 到 TB 级别）并希望利用 AWS 的企业级带宽实现稳定、高速上传时，该功能非常有用。
+
+### a. 前提条件
+
+- **你自己的 AWS S3 Bucket**：必须创建一个**位于 `us-east-1`（美国东部 - 弗吉尼亚北部）区域**的 S3 bucket。这是 [NCBI 的硬性要求](https://www.ncbi.nlm.nih.gov/sra/docs/data-delivery)——其他区域的 bucket 将无法被 SRA 提交门户接受。
+- **AWS 凭证**：通过 `aws configure` 或环境变量（`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`）配置 AWS 凭证。这些凭证仅在本地使用，**绝不会共享给 NCBI**。
+
+### b. 工作原理
+
+基于 S3 的 SRA 提交采用**只读权限模型**——你不需要给 NCBI 任何凭证：
+
+1. **上传文件**到你的 S3 bucket（使用你自己的 AWS key，由 `EBIDownload upload` 处理）
+2. **应用 Bucket Policy**，授权 NCBI 的 IAM 用户（`arn:aws:iam::228184908524:user/SA-SubmissionPortal-S3`）拥有只读权限（由 `--apply-policy` 处理）
+3. **在 SRA 提交门户**（[https://submit.ncbi.nlm.nih.gov/subs/sra/](https://submit.ncbi.nlm.nih.gov/subs/sra/)）选择 "Upload from Amazon S3 storage" 并提供你的 S3 路径
+
+```
+你 (Bucket 所有者)                    NCBI SRA 提交门户
+       │                                    │
+       │  1. 上传文件 (使用你的 AWS key)      │
+       │  ──────────────────► S3 Bucket      │
+       │                                    │
+       │  2. 添加 Bucket Policy              │
+       │     (为 NCBI IAM 用户授予只读权限)   │
+       │  ──────────────────► S3 Bucket      │
+       │                                    │
+       │  3. 在门户提交 S3 路径              │
+       │  ──────────────────────────────────►│
+       │                                    │
+       │              NCBI 读取文件          │
+       │              (使用他们自己的 IAM key)│
+       │                                    ├────► S3 Bucket (只读)
+```
+
+### c. 费用说明
+
+| 项目 | 费用 |
+|------|------|
+| S3 存储 | ~$0.023/GB/月 |
+| 上传流量（进入 AWS） | **免费** |
+| NCBI 读取流量（同区域） | **免费** |
+
+实际费用**仅为存储费**。例如，100 GB 数据存储 2 周的费用不到 **$1**。一旦 SRA 确认你的提交已被处理，你可以**删除 bucket**以停止所有费用。AWS 免费套餐还包括前 12 个月的 5 GB S3 存储。
+
+### d. 使用方法
+
+```bash
+# 基本上传到 S3
+EBIDownload upload -b my-sra-bucket -f sample_R1.fastq.gz sample_R2.fastq.gz
+
+# 上传并应用 NCBI Bucket Policy + 生成元数据模板
+EBIDownload upload -b my-sra-bucket \
+    -f sample_R1.fastq.gz sample_R2.fastq.gz \
+    --apply-policy \
+    --metadata-template sra_metadata.tsv
+
+# 试运行：预览文件而不实际上传
+EBIDownload upload -b my-sra-bucket -f *.fastq.gz --dry-run
+
+# 使用 S3 key 前缀（子目录）上传
+EBIDownload upload -b my-sra-bucket --prefix project_001 -f *.fastq.gz
+```
+
+| 参数 | 描述 | 默认值 |
+|------|------|--------|
+| `-b`, `--bucket` | **必需**，AWS S3 bucket 名称 | — |
+| `--prefix` | S3 key 前缀（子目录） | — |
+| `-f`, `--files` | 要上传的文件 | — |
+| `--region` | AWS 区域（NCBI 要求必须为 `us-east-1`） | `us-east-1` |
+| `-c`, `--concurrent` | 并发上传文件数 | 4 |
+| `--apply-policy` | 应用 NCBI SRA 提交 bucket 策略 | `false` |
+| `--metadata-template` | 生成 SRA 元数据模板 TSV | — |
+| `--dry-run` | 预览将要上传的内容，不执行实际上传 | `false` |
+
+### e. 何时使用 S3 上传 vs. 替代方案
+
+| 方法 | 费用 | 速度 | 适用场景 |
+|------|------|------|----------|
+| **S3 上传**（`EBIDownload upload`） | ~$0.023/GB/月 | 最快、最稳定 | 大型数据集（100 GB+）、网络不稳定 |
+| **Aspera (ascp)** | 免费 | 快 | 中型数据集、网络良好 |
+| **NCBI Web 上传** | 免费 | 慢，大文件不稳定 | 小型数据集（< 10 GB） |
+
+> **提示**：如果你的数据量较小，使用免费的 NCBI Web 上传或 Aspera。S3 上传是"花少量钱换取速度和可靠性"的选择——非常适合需要提交数百 GB 数据并希望获得企业级带宽和断点续传的场景。
+
+### f. 完整工作流程示例
+
+```bash
+# 步骤 1：在 us-east-1 创建 S3 bucket（一次性设置）
+aws s3 mb s3://my-sra-bucket --region us-east-1
+
+# 步骤 2：上传文件 + 应用 NCBI 策略 + 生成元数据模板
+EBIDownload upload -b my-sra-bucket \
+    -f sample1_R1.fastq.gz sample1_R2.fastq.gz \
+       sample2_R1.fastq.gz sample2_R2.fastq.gz \
+    --apply-policy \
+    --metadata-template sra_metadata.tsv \
+    --region us-east-1
+
+# 步骤 3：填写 sra_metadata.tsv 中的空列
+#   （library_strategy、library_source、platform、instrument_model 等）
+
+# 步骤 4：前往 https://submit.ncbi.nlm.nih.gov/subs/sra/
+#   - 创建新提交
+#   - 在"Files"步骤选择 "Upload from Amazon S3 storage"
+#   - 输入你的 S3 路径：s3://my-sra-bucket/sample1_R1.fastq.gz 等
+
+# 步骤 5：等待 SRA 确认邮件，然后删除 bucket
+aws s3 rb s3://my-sra-bucket --force
+```
+
+---
+
+## 7. 子命令结构说明
+
+从 v1.3.6 版本开始，EBIDownload 采用子命令结构：
+
+```bash
+EBIDownload <command> [options]
+```
+
+| 子命令 | 描述 |
+|--------|------|
+| `download` | 从 EBI ENA / NCBI SRA 下载测序数据（原有功能） |
+| `upload` | 上传测序数据至 AWS S3 用于 NCBI SRA 提交（新功能） |
+
+**注意**：如果你之前使用的是扁平化命令格式（如 `EBIDownload -A PRJNA1251654 -o ./data`），现在需要添加 `download` 子命令：
+
+```bash
+# 旧格式（已废弃）
+EBIDownload -A PRJNA1251654 -o ./data -d aws
+
+# 新格式
+EBIDownload download -A PRJNA1251654 -o ./data -d aws
+```
+
+所有下载相关的参数和功能保持不变，只是需要在前添加 `download` 子命令。

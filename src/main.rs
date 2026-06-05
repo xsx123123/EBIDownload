@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::Local;
 use clap::Parser;
+use clap::Subcommand;
 use indicatif::{MultiProgress, HumanBytes};
 use csv::{ReaderBuilder, WriterBuilder};
 use regex::Regex;
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{ExitCode, Stdio};
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
@@ -19,6 +20,7 @@ use std::time::Duration;
 mod aws_s3;
 mod ftp;
 mod prefetch;
+mod upload;
 
 const VERSION: &str = "1.3.6";
 const SCRIPT_NAME: &str = "EBIDownload";
@@ -32,7 +34,7 @@ const HELP_LOGO: &str = "\n\n\x1b[1;37m    ███████╗████�
 \x1b[1;37m    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝\x1b[0m\n\
 \x1b[1;37m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ \x1b[0m\n\
                                                                           \n\
-\x1b[1;37m              🧬  EMBL-ENA Data Downloader  |  v1.3.6\x1b[0m";
+\x1b[1;37m              🧬  EMBL-ENA Data Toolkit   |  v1.3.6\x1b[0m";
 
 const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
@@ -43,11 +45,15 @@ const HELP_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
+// ============================================================
+// CLI Structure: Subcommands (download / upload)
+// ============================================================
+
 #[derive(Parser, Debug)]
 #[command(
     author,
     version = VERSION,
-    about = "Download EMBL-ENA sequencing data",
+    about = "Download and upload sequencing data (EBI ENA / NCBI SRA)",
     long_about = None,
     color = clap::ColorChoice::Always,
     styles = HELP_STYLES,
@@ -59,7 +65,32 @@ const HELP_STYLES: Styles = Styles::styled()
 {all-args}
 "#
 )]
-struct Args {
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+
+    #[arg(short, long, global = true, default_value = "EBIDownload.yaml", value_name = "FILE", help_heading = "Global Options")]
+    yaml: PathBuf,
+    #[arg(long, global = true, default_value = "info", help = "Log level: trace/debug/info/warn/error", help_heading = "Global Options")]
+    log_level: String,
+    #[arg(long, global = true, default_value = "text", help = "Log format: text or json", help_heading = "Global Options")]
+    log_format: LogFormat,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Download sequencing data from EBI ENA / NCBI SRA
+    Download(DownloadArgs),
+    /// Upload sequencing data to AWS S3 for NCBI SRA submission
+    Upload(UploadArgs),
+}
+
+// ============================================================
+// Download Subcommand Arguments (unchanged from original Args)
+// ============================================================
+
+#[derive(Parser, Debug)]
+struct DownloadArgs {
     #[arg(short = 'A', long, value_name = "ID", help = "ENA project accession, e.g. PRJNA1251654", help_heading = "Input Options")]
     accession: Option<String>,
     #[arg(short = 'T', long, value_name = "FILE", help = "Path to a TSV file with run list", help_heading = "Input Options")]
@@ -91,18 +122,42 @@ struct Args {
     #[arg(long = "exclude-run", num_args = 1.., help = "Exclude runs matching regex", help_heading = "Filters")]
     exclude_run: Vec<String>,
 
-    #[arg(short, long, default_value = "EBIDownload.yaml", value_name = "FILE", help_heading = "Advanced Options")]
-    yaml: PathBuf,
-    #[arg(long, default_value = "info", help = "Log level: trace/debug/info/warn/error", help_heading = "Advanced Options")]
-    log_level: String,
-    #[arg(long, default_value = "text", help = "Log format: text or json", help_heading = "Advanced Options")]
-    log_format: LogFormat,
     #[arg(long, default_value = "false", help = "Remove intermediate .sra files after conversion", help_heading = "Advanced Options")]
     cleanup_sra: bool,
-
     #[arg(long, default_value = "false", help = "Show what would be downloaded without actually downloading", help_heading = "Advanced Options")]
     dry_run: bool,
 }
+
+// ============================================================
+// Upload Subcommand Arguments (NEW)
+// ============================================================
+
+#[derive(Parser, Debug)]
+struct UploadArgs {
+    #[arg(short, long, value_name = "NAME", help = "AWS S3 bucket name", help_heading = "S3 Options")]
+    bucket: String,
+    #[arg(long, value_name = "PREFIX", help = "S3 key prefix (subdirectory)", help_heading = "S3 Options")]
+    prefix: Option<String>,
+    #[arg(short = 'f', long, num_args = 1.., value_name = "FILE", help = "Files to upload", help_heading = "S3 Options")]
+    files: Vec<PathBuf>,
+
+    #[arg(long, default_value = "us-east-1", help = "AWS region for the S3 bucket", help_heading = "AWS Options")]
+    region: String,
+    #[arg(short = 'c', long, default_value = "4", help = "Concurrent file uploads", help_heading = "AWS Options")]
+    concurrent: usize,
+
+    #[arg(long, default_value = "false", help = "Apply NCBI SRA submission bucket policy", help_heading = "NCBI SRA")]
+    apply_policy: bool,
+    #[arg(long, value_name = "FILE", help = "Generate SRA metadata template TSV", help_heading = "NCBI SRA")]
+    metadata_template: Option<PathBuf>,
+
+    #[arg(long, default_value = "false", help = "Show what would be uploaded without actually uploading", help_heading = "Advanced Options")]
+    dry_run: bool,
+}
+
+// ============================================================
+// Shared Types
+// ============================================================
 
 #[derive(Debug, Clone, clap::ValueEnum)]
 enum DownloadMethod {
@@ -221,7 +276,7 @@ struct RegexFilters {
 }
 
 impl RegexFilters {
-    fn new(args: &Args) -> Result<Self> {
+    fn new(args: &DownloadArgs) -> Result<Self> {
         Ok(Self {
             include_sample: args.filter_sample.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-sample")?,
             include_run: args.filter_run.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-run")?,
@@ -266,111 +321,165 @@ async fn check_network_health() {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
+    let cli = Cli::parse();
+
+    let output_dir = match &cli.command {
+        Commands::Download(args) => args.output.clone(),
+        Commands::Upload(_) => PathBuf::from("."),
+    };
+
+    if let Commands::Download(args) = &cli.command {
+        if let Err(e) = fs::create_dir_all(&args.output) {
+            eprintln!("❌ Failed to create output directory: {}", e);
+            return ExitCode::FAILURE;
+        }
+    }
+
+    print_banner();
+
+    if let Err(e) = setup_logging(&output_dir, &cli.log_level, &cli.log_format, match &cli.command {
+        Commands::Download(args) => args.accession.as_deref(),
+        Commands::Upload(_) => None,
+    }) {
+        eprintln!("❌ Failed to setup logging: {}", e);
+        return ExitCode::FAILURE;
+    }
+
+    check_network_health().await;
+
     let result: Result<()> = async {
-        let args = Args::parse();
-        fs::create_dir_all(&args.output).context("Failed to create output directory")?;
-        print_banner();
-        
-        setup_logging(&args.output, &args.log_level, &args.log_format, args.accession.as_deref())?;
-        check_network_health().await;
-        check_pigz_dependency().context("pigz dependency check failed")?;
-
-        let filters = RegexFilters::new(&args)?;
-        let config = load_config(&args.yaml).context("Failed to load YAML configuration")?;
-
-        info!("📁 Output directory: {}", args.output.display());
-
-        let records = if let Some(accession) = &args.accession {
-            fetch_ena_data(accession).await?
-        } else if let Some(tsv_path) = &args.tsv {
-            read_tsv_data(tsv_path)?
-        } else {
-            return Err(anyhow!("Either --accession or --tsv must be provided"));
-        };
-
-        info!("📊 Total records fetched: {}", records.len());
-        let filtered_records = apply_filters(records, &filters)?;
-        info!("✅ Records after filtering: {}", filtered_records.len());
-        
-        if filtered_records.is_empty() {
-            warn!("⚠️  No records match the filter criteria. Exiting.");
-            return Ok(());
-        }
-
-        save_metadata_tsv(&filtered_records, &args.output, args.accession.as_deref())?;
-
-        let processed = process_records(filtered_records, &args)?;
-        save_md5_files(&processed, &args.output, args.accession.as_deref())?;
-
-        if args.dry_run {
-            info!("🏜️  Dry Run Mode: Listing files that would be downloaded:");
-            for record in &processed {
-                info!("   📦 [{}]", record.run_accession);
-                info!("      - File 1: {} ({})", record.fastq_ftp_1_name, HumanBytes(record.fastq_bytes_1));
-                
-                if let (Some(name), Some(size)) = (&record.fastq_ftp_2_name, record.fastq_bytes_2) {
-                    info!("      - File 2: {} ({})", name, HumanBytes(size));
-                }
+        match &cli.command {
+            Commands::Download(args) => {
+                check_pigz_dependency().context("pigz dependency check failed")?;
+                run_download(args, &cli).await
             }
-            info!("🏜️  Dry Run completed. No files were downloaded.");
-            return Ok(());
-        }
-
-        match args.download {
-            DownloadMethod::Ascp => {
-                check_ascp_config(&config)?;
-                download_with_ascp(&processed, &config, &args).await?;
-            }
-            DownloadMethod::Ftp => {
-                download_with_ftp(&processed, &config, &args).await?;
-            }
-            DownloadMethod::Prefetch => {
-                check_prefetch_config(&config)?;
-                check_fasterq_dump_config(&config)?;
-                download_with_prefetch(&processed, &config, &args).await?;
-            }
-            DownloadMethod::Aws => {
-                check_fasterq_dump_config(&config)?;
-                download_with_aws(&processed, &config, &args).await?;
-            }
-            DownloadMethod::Auto => {
-                info!("🤖 Auto Mode: Attempting AWS S3 first...");
-                check_fasterq_dump_config(&config)?;
-                check_prefetch_config(&config)?;
-                // Note: In a full production system, we would track individual file failures.
-                // Here we attempt AWS. If it completes, great.
-                // If the entire batch fails (e.g. API error), we catch it and try Prefetch.
-                if let Err(e) = download_with_aws(&processed, &config, &args).await {
-                    warn!("⚠️  AWS S3 download encountered issues: {}. Switching to Prefetch...", e);
-                    download_with_prefetch(&processed, &config, &args).await?;
-                }
+            Commands::Upload(args) => {
+                run_upload(args).await
             }
         }
-
-        info!("🎉 {} download completed successfully!", SCRIPT_NAME);
-        Ok(())
     }
     .await;
 
     if let Err(e) = result {
         tracing::error!("Application failed: {:?}", e);
         eprintln!("\n❌ An error occurred. Please check the log file for detailed error information.");
-        std::process::exit(1);
+        return ExitCode::FAILURE;
     }
+
+    ExitCode::SUCCESS
+}
+
+// ============================================================
+// Download Command Entry Point (original main logic, unchanged)
+// ============================================================
+
+async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
+    let filters = RegexFilters::new(args)?;
+    let config = load_config(&cli.yaml).context("Failed to load YAML configuration")?;
+
+    info!("📁 Output directory: {}", args.output.display());
+
+    let records = if let Some(accession) = &args.accession {
+        fetch_ena_data(accession).await?
+    } else if let Some(tsv_path) = &args.tsv {
+        read_tsv_data(tsv_path)?
+    } else {
+        return Err(anyhow!("Either --accession or --tsv must be provided"));
+    };
+
+    info!("📊 Total records fetched: {}", records.len());
+    let filtered_records = apply_filters(records, &filters)?;
+    info!("✅ Records after filtering: {}", filtered_records.len());
+
+    if filtered_records.is_empty() {
+        warn!("⚠️  No records match the filter criteria. Exiting.");
+        return Ok(());
+    }
+
+    save_metadata_tsv(&filtered_records, &args.output, args.accession.as_deref())?;
+
+    let processed = process_records(filtered_records, args)?;
+    save_md5_files(&processed, &args.output, args.accession.as_deref())?;
+
+    if args.dry_run {
+        info!("🏜️  Dry Run Mode: Listing files that would be downloaded:");
+        for record in &processed {
+            info!("   📦 [{}]", record.run_accession);
+            info!("      - File 1: {} ({})", record.fastq_ftp_1_name, HumanBytes(record.fastq_bytes_1));
+
+            if let (Some(name), Some(size)) = (&record.fastq_ftp_2_name, record.fastq_bytes_2) {
+                info!("      - File 2: {} ({})", name, HumanBytes(size));
+            }
+        }
+        info!("🏜️  Dry Run completed. No files were downloaded.");
+        return Ok(());
+    }
+
+    match args.download {
+        DownloadMethod::Ascp => {
+            check_ascp_config(&config)?;
+            download_with_ascp(&processed, &config, args).await?;
+        }
+        DownloadMethod::Ftp => {
+            download_with_ftp(&processed, &config, args).await?;
+        }
+        DownloadMethod::Prefetch => {
+            check_prefetch_config(&config)?;
+            check_fasterq_dump_config(&config)?;
+            download_with_prefetch(&processed, &config, args).await?;
+        }
+        DownloadMethod::Aws => {
+            check_fasterq_dump_config(&config)?;
+            download_with_aws(&processed, &config, args).await?;
+        }
+        DownloadMethod::Auto => {
+            info!("🤖 Auto Mode: Attempting AWS S3 first...");
+            check_fasterq_dump_config(&config)?;
+            check_prefetch_config(&config)?;
+            // Note: In a full production system, we would track individual file failures.
+            // Here we attempt AWS. If it completes, great.
+            // If the entire batch fails (e.g. API error), we catch it and try Prefetch.
+            if let Err(e) = download_with_aws(&processed, &config, args).await {
+                warn!("⚠️  AWS S3 download encountered issues: {}. Switching to Prefetch...", e);
+                download_with_prefetch(&processed, &config, args).await?;
+            }
+        }
+    }
+
+    info!("🎉 {} download completed successfully!", SCRIPT_NAME);
+    Ok(())
+}
+
+// ============================================================
+// Upload Command Entry Point (NEW)
+// ============================================================
+
+async fn run_upload(args: &UploadArgs) -> Result<()> {
+    upload::run_upload(
+        &args.bucket,
+        &args.prefix,
+        &args.files,
+        &args.region,
+        args.concurrent,
+        args.apply_policy,
+        &args.metadata_template,
+        args.dry_run,
+    )
+    .await
 }
 
 fn print_banner() {
     let logo = format!(
         r#"
-    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗ 
+    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗
     ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗
     █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║
     ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║
     ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝
-    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ 
-                                                                          
-              🧬  EMBL-ENA Data Downloader  |  v{}"#,
+    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
+
+              🧬  EMBL-ENA Data Toolkit    |  v{}"#,
         VERSION
     );
     println!("{}\n", logo);
@@ -392,7 +501,7 @@ fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat, accessi
     };
     let log_path = output_dir.join(&log_name);
     let file = File::create(&log_path)?;
-    
+
     // File layer always uses simple text for readability
     let file_layer = fmt::layer()
         .with_writer(file)
@@ -406,7 +515,7 @@ fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat, accessi
     if let Ok(directive) = "download_detail=off".parse() {
         stdout_filter = stdout_filter.add_directive(directive);
     }
-    
+
     match format {
         LogFormat::Json => {
             let json_layer = fmt::layer()
@@ -416,7 +525,7 @@ fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat, accessi
                 .flatten_event(true)
                 .with_target(false)
                 .with_filter(stdout_filter);
-                
+
             let subscriber = tracing_subscriber::registry().with(file_layer).with(json_layer);
             tracing::subscriber::set_global_default(subscriber).context("Failed to set subscriber")?;
         }
@@ -429,7 +538,7 @@ fn setup_logging(output_dir: &Path, log_level: &str, format: &LogFormat, accessi
                 .with_timer(LocalTimer)
                 .compact()
                 .with_filter(stdout_filter);
-                
+
             let subscriber = tracing_subscriber::registry().with(file_layer).with(stdout_layer);
             tracing::subscriber::set_global_default(subscriber).context("Failed to set subscriber")?;
         }
@@ -452,10 +561,10 @@ async fn fetch_ena_data(accession: &str) -> Result<Vec<EnaRecord>> {
     let fields = "run_accession,study_accession,secondary_study_accession,sample_accession,secondary_sample_accession,experiment_accession,submission_accession,tax_id,scientific_name,instrument_platform,instrument_model,library_name,nominal_length,library_layout,library_strategy,library_source,library_selection,read_count,center_name,first_public,last_updated,experiment_title,study_title,study_alias,run_alias,fastq_bytes,fastq_md5,fastq_ftp,fastq_aspera,fastq_galaxy,submitted_bytes,submitted_md5,submitted_ftp,submitted_aspera,submitted_galaxy,submitted_format,sra_bytes,sra_md5,sra_ftp,sra_aspera,sra_galaxy,sample_alias,sample_title,nominal_sdev,first_created,bam_ftp,fastq_file_role,submitted_file_role,sra_file_role";
     let url = format!("https://www.ebi.ac.uk/ena/portal/api/filereport?accession={}&result=read_run&fields={}&format=tsv", accession, fields);
     info!("🌐 Fetching data from ENA API for: {}", accession);
-    
+
     let client = reqwest::Client::builder()
         .build()?;
-        
+
     let response = client.get(&url).send().await.context("Failed to fetch data from ENA API")?;
     if !response.status().is_success() { return Err(anyhow!("Failed to get response. Status code: {}", response.status())); }
     let text = response.text().await?;
@@ -486,7 +595,7 @@ fn apply_filters(records: Vec<EnaRecord>, filters: &RegexFilters) -> Result<Vec<
 }
 
 // 🟢 Modified ProcessedRecord generation logic, parse file size
-fn process_records(records: Vec<EnaRecord>, args: &Args) -> Result<Vec<ProcessedRecord>> {
+fn process_records(records: Vec<EnaRecord>, args: &DownloadArgs) -> Result<Vec<ProcessedRecord>> {
     info!("⚙️  Processing records...");
     let mut processed = Vec::new();
     for record in records {
@@ -513,8 +622,8 @@ fn process_records(records: Vec<EnaRecord>, args: &Args) -> Result<Vec<Processed
 
         let (ftp_2_url, ftp_2_name, md5_2, size_2) = if ftp_urls.len() >= 2 && md5s.len() >= 2 {
             (
-                Some(ftp_urls[1].to_string()), 
-                Some(ftp_urls[1].rsplit('/').next().unwrap_or("").to_string()), 
+                Some(ftp_urls[1].to_string()),
+                Some(ftp_urls[1].rsplit('/').next().unwrap_or("").to_string()),
                 Some(md5s[1].to_string()),
                 sizes.get(1).copied()
             )
@@ -560,10 +669,10 @@ fn save_md5_files(records: &[ProcessedRecord], output_dir: &Path, accession: Opt
             save_dir.join("R2_fastq_md5.tsv"),
         )
     };
-    
+
     let mut r1_file = File::create(&r1_path)?;
     let mut r2_file = File::create(&r2_path)?;
-    
+
     for record in records {
         writeln!(r1_file, "{}\t{}\t{}", record.fastq_md5_1, record.fastq_ftp_1_name, record.sample_title)?;
         if let (Some(md5), Some(name)) = (&record.fastq_md5_2, &record.fastq_ftp_2_name) {
@@ -588,16 +697,16 @@ fn save_metadata_tsv(records: &[EnaRecord], output_dir: &Path, accession: Option
         save_dir.join("ena_metadata.tsv")
     };
     info!("💾 Saving ENA metadata to {}...", path.display());
-    
+
     let mut file = File::create(&path)?;
     if let Some(acc) = accession {
         writeln!(file, "# Project Accession: {}", acc)?;
     }
-    
+
     let mut wtr = WriterBuilder::new()
         .delimiter(b'\t')
         .from_writer(file);
-        
+
     for record in records {
         wtr.serialize(record)?;
     }
@@ -634,17 +743,17 @@ async fn run_command(cmd: &str, dir: &Path) -> Result<()> {
 }
 
 // Prefetch Entry
-async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, args: &Args) -> Result<()> {
+async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs) -> Result<()> {
     prefetch::download_all(records, config, &args.output, args.multithreads, args.aws_threads, &args.prefetch_max_size, args.cleanup_sra).await
 }
 
 // AWS Entry (Keep original logic)
-async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &Args) -> Result<()> {
+async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs) -> Result<()> {
     info!("☁️  Starting AWS S3 downloads...");
 
     let file_concurrency = args.multithreads;
     let chunk_concurrency = args.aws_threads;
-    let process_threads = if args.aws_threads > 4 { args.aws_threads } else { 4 }; 
+    let process_threads = if args.aws_threads > 4 { args.aws_threads } else { 4 };
     let chunk_size_mb = args.chunk_size;
 
     info!("⚙️  Config: Parallel Files = {}, Threads/File = {}, Chunk Size = {}MB", file_concurrency, chunk_concurrency, chunk_size_mb);
@@ -654,7 +763,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
     let mut handles = Vec::new();
 
     let fasterq_dump_path = config.software.fasterq_dump.display().to_string();
-    let pigz_path = "pigz"; 
+    let pigz_path = "pigz";
 
     for record in records {
         let run_id = record.run_accession.clone();
@@ -669,17 +778,17 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
-            
+
             info!("📥 [{}] Step 1: Downloading via AWS S3...", run_id);
             let metadata = aws_s3::SraUtils::get_metadata(&run_id, None).await?;
             let sra_filename = format!("{}.sra", run_id);
-            
+
             if let Some(sra_metadata) = metadata {
                 let downloader = aws_s3::ResumableDownloader::new(
                     run_id.clone(),
                     sra_metadata,
                     output_dir.clone(),
-                    chunk_size, 
+                    chunk_size,
                     max_workers,
                     Some(mp),
                 ).await?;
@@ -698,7 +807,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
             // Smart check: If FASTQ file exists and is not empty, skip conversion
             let fq_1 = output_dir.join(format!("{}_1.fastq", run_id));
             let fq_single = output_dir.join(format!("{}.fastq", run_id));
-            let fq_exists = (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) || 
+            let fq_exists = (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) ||
                             (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false));
 
             if fq_exists {
@@ -726,16 +835,16 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
             }
 
             // Fault-tolerant compression
-            if (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) || 
+            if (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) ||
                (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false)) {
-                
+
                 info!("📦 [{}] Step 3: Compressing (pigz)...", run_id);
-                // Pigz with wildcard still needs shell or glob expansion. 
+                // Pigz with wildcard still needs shell or glob expansion.
                 // Using bash -c here is acceptable for wildcard, but we can make it slightly safer by avoiding string formatting if possible.
                 // However, pigz *.fastq is inherently shell-dependent unless we expand in Rust.
                 // For simplicity/robustness, we keep the run_command (shell) for pigz as it is complex to reimplement globbing.
                 run_command(&cmd_compress, &output_dir).await.context("pigz failed")?;
-                
+
                 if cleanup_sra {
                     let sra_path = output_dir.join(&sra_filename);
                     if sra_path.exists() {
@@ -745,7 +854,7 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                         }
                     }
                 }
-                
+
                 info!("✅ [{}] All steps completed successfully!", run_id);
                 Ok(())
             } else {
@@ -765,24 +874,24 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
 }
 
 // FTP Entry
-async fn download_with_ftp(records: &[ProcessedRecord], config: &Config, args: &Args) -> Result<()> {
+async fn download_with_ftp(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs) -> Result<()> {
     // 🟢 Call ftp.rs, pass file size to enable percentage progress bar
     ftp::process_downloads(
-        records, 
-        config, 
-        &args.output, 
-        ftp::Protocol::Ftp, 
+        records,
+        config,
+        &args.output,
+        ftp::Protocol::Ftp,
         args.multithreads
     ).await
 }
 
 // Aspera Entry
-async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: &Args) -> Result<()> {
+async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs) -> Result<()> {
     ftp::process_downloads(
-        records, 
-        config, 
-        &args.output, 
-        ftp::Protocol::Ascp, 
+        records,
+        config,
+        &args.output,
+        ftp::Protocol::Ascp,
         args.multithreads
     ).await
 }

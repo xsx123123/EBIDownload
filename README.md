@@ -247,3 +247,115 @@ After the script runs, the output directory will contain the following files and
 
 - **Sample Directories**: `SRRXXXXXX/`
   - Each directory corresponds to a downloaded sample (Run ID) and contains the actual sequencing data files.
+
+---
+
+## 6. Upload to NCBI SRA via AWS S3
+
+In addition to downloading, EBIDownload supports **uploading sequencing data to AWS S3** for fast NCBI SRA submission. This is useful when you need to submit large volumes of data (hundreds of GB to TB scale) and want to leverage AWS's enterprise-grade bandwidth for reliable, high-speed uploads.
+
+### a. Prerequisites
+
+- **Your own AWS S3 Bucket**: You must create an S3 bucket **in the `us-east-1` (US East - N. Virginia) region**. This is a [hard requirement from NCBI](https://www.ncbi.nlm.nih.gov/sra/docs/data-delivery) — buckets in other regions will not work.
+- **AWS Credentials**: Configure your AWS credentials via `aws configure` or environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). These are used locally and are **never shared with NCBI**.
+
+### b. How It Works
+
+The S3-based SRA submission uses a **read-only permission model** — you don't give NCBI any credentials:
+
+1. **Upload files** to your S3 bucket using your own AWS key (handled by `EBIDownload upload`)
+2. **Apply Bucket Policy** to authorize NCBI's IAM user (`arn:aws:iam::228184908524:user/SA-SubmissionPortal-S3`) with read-only access (handled by `--apply-policy`)
+3. **Submit on the SRA Portal** ([https://submit.ncbi.nlm.nih.gov/subs/sra/](https://submit.ncbi.nlm.nih.gov/subs/sra/)), select "Upload from Amazon S3 storage" and provide your S3 paths
+
+```
+You (Bucket Owner)                    NCBI SRA Portal
+       │                                    │
+       │  1. Upload files (your AWS key)     │
+       │  ──────────────────► S3 Bucket      │
+       │                                    │
+       │  2. Add Bucket Policy               │
+       │     (read-only for NCBI IAM user)   │
+       │  ──────────────────► S3 Bucket      │
+       │                                    │
+       │  3. Submit S3 paths on Portal       │
+       │  ──────────────────────────────────►│
+       │                                    │
+       │              NCBI reads files       │
+       │              (their own IAM key)    ├────► S3 Bucket (read-only)
+```
+
+### c. Cost
+
+| Item | Cost |
+|------|------|
+| S3 Storage | ~$0.023/GB/month |
+| Upload traffic (into AWS) | **Free** |
+| NCBI reading traffic (same region) | **Free** |
+
+The actual cost is **storage only**. For example, 100 GB of data stored for 2 weeks costs less than **$1**. Once SRA confirms your submission has been processed, you can **delete the bucket** to stop all charges. AWS Free Tier also includes 5 GB of S3 storage for the first 12 months.
+
+### d. Usage
+
+```bash
+# Basic upload to S3
+EBIDownload upload -b my-sra-bucket -f sample_R1.fastq.gz sample_R2.fastq.gz
+
+# Upload with NCBI Bucket Policy + metadata template generation
+EBIDownload upload -b my-sra-bucket \
+    -f sample_R1.fastq.gz sample_R2.fastq.gz \
+    --apply-policy \
+    --metadata-template sra_metadata.tsv
+
+# Dry run: preview files without uploading
+EBIDownload upload -b my-sra-bucket -f *.fastq.gz --dry-run
+
+# Upload with S3 key prefix (subdirectory)
+EBIDownload upload -b my-sra-bucket --prefix project_001 -f *.fastq.gz
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-b`, `--bucket` | **Required**, AWS S3 bucket name | — |
+| `--prefix` | S3 key prefix (subdirectory) | — |
+| `-f`, `--files` | Files to upload | — |
+| `--region` | AWS region (must be `us-east-1` for NCBI) | `us-east-1` |
+| `-c`, `--concurrent` | Concurrent file uploads | 4 |
+| `--apply-policy` | Apply NCBI SRA submission bucket policy | `false` |
+| `--metadata-template` | Generate SRA metadata template TSV | — |
+| `--dry-run` | Show what would be uploaded without uploading | `false` |
+
+### e. When to Use S3 Upload vs. Alternatives
+
+| Method | Cost | Speed | Best For |
+|--------|------|-------|----------|
+| **S3 Upload** (`EBIDownload upload`) | ~$0.023/GB/month | Fastest, most reliable | Large datasets (100 GB+), unstable networks |
+| **Aspera (ascp)** | Free | Fast | Medium datasets, good network |
+| **NCBI Web Upload** | Free | Slow, unreliable for large files | Small datasets (< 10 GB) |
+
+> **Tip**: If your data is small, use the free NCBI Web Upload or Aspera. S3 upload is a "pay a little for speed and reliability" option — ideal when you have hundreds of GB to submit and want enterprise-grade bandwidth with resumable transfers.
+
+### f. Complete Workflow Example
+
+```bash
+# Step 1: Create an S3 bucket in us-east-1 (one-time setup)
+aws s3 mb s3://my-sra-bucket --region us-east-1
+
+# Step 2: Upload files + apply NCBI policy + generate metadata template
+EBIDownload upload -b my-sra-bucket \
+    -f sample1_R1.fastq.gz sample1_R2.fastq.gz \
+       sample2_R1.fastq.gz sample2_R2.fastq.gz \
+    --apply-policy \
+    --metadata-template sra_metadata.tsv \
+    --region us-east-1
+
+# Step 3: Fill in the empty columns in sra_metadata.tsv
+#   (library_strategy, library_source, platform, instrument_model, etc.)
+
+# Step 4: Go to https://submit.ncbi.nlm.nih.gov/subs/sra/
+#   - Create a new submission
+#   - At the "Files" step, select "Upload from Amazon S3 storage"
+#   - Enter your S3 paths: s3://my-sra-bucket/sample1_R1.fastq.gz etc.
+
+# Step 5: Wait for SRA confirmation email, then delete the bucket
+aws s3 rb s3://my-sra-bucket --force
+```
