@@ -3,9 +3,10 @@
 //! Supports uploading sequencing data to AWS S3 for NCBI SRA submission,
 //! including automatic Bucket Policy configuration for NCBI IAM user access.
 
+use crate::progress::transfer_bar_style;
 use anyhow::{anyhow, Context, Result};
 use aws_sdk_s3::primitives::ByteStream;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -249,13 +250,7 @@ async fn upload_single_file(
         .to_string();
 
     let pb = mp.add(ProgressBar::new(size));
-    pb.set_style(
-        ProgressStyle::with_template(
-            "  {spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta}) {msg}",
-        )
-        .unwrap()
-        .progress_chars("##-"),
-    );
+    pb.set_style(transfer_bar_style());
     pb.set_message(filename.clone());
 
     let body = ByteStream::from_path(path).await

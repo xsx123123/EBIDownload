@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use crate::progress::{transfer_bar_style, verify_bar_style};
+use indicatif::{MultiProgress, ProgressBar};
 use md5;
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -262,15 +263,12 @@ impl ResumableDownloader {
         } else {
              ProgressBar::new(self.metadata.size)
         };
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} {prefix:>15.bold.cyan} ║{bar:30.cyan/blue}║ {percent:>3}% {bytes:>10}/{total_bytes:>10} │ {binary_bytes_per_sec:>10} │ ETA {eta_precise:>8} {msg}")?
-                .progress_chars("█▓░")
-        );
+        pb.set_style(transfer_bar_style());
         pb.set_prefix(self.run_id.clone());
+        pb.set_message("Downloading");
         pb.enable_steady_tick(std::time::Duration::from_millis(100));
         
-        // 🟢 Print compact details above the progress bar
+        // Keep per-file details in the log file without cluttering active progress bars.
         let size_gb = self.metadata.size as f64 / 1024.0 / 1024.0 / 1024.0;
         let details = format!(
             "📌 {} │ 📦 {:.2} GB │ 🔑 {} │ 💾 {}", 
@@ -279,7 +277,6 @@ impl ResumableDownloader {
             self.metadata.md5.as_deref().unwrap_or("N/A"),
             self.filepath.display()
         );
-        pb.println(&details);
         info!(target: "download_detail", "{}", details);
 
         if tasks.is_empty() {
@@ -368,12 +365,9 @@ impl ResumableDownloader {
              ProgressBar::new(self.metadata.size)
         };
         
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.yellow} {prefix:>15.bold.yellow} ║{bar:30.green/white}║ {percent:>3}% {bytes:>10}/{total_bytes:>10} │ {binary_bytes_per_sec:>10} │ 🔍 Verifying {msg}")?
-                .progress_chars("█▓░")
-        );
+        pb.set_style(verify_bar_style());
         pb.set_prefix(self.run_id.clone());
+        pb.set_message("Verifying");
         pb.enable_steady_tick(std::time::Duration::from_millis(100));
         
         let mut file = tokio::fs::File::open(&self.filepath).await?;
@@ -463,4 +457,3 @@ async fn download_chunk_http(client: Client, url: &str, chunk: &ChunkInfo, filep
         tokio::time::sleep(Duration::from_secs(sleep_sec)).await;
     }
 }
-

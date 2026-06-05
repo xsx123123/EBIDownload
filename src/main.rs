@@ -20,6 +20,7 @@ use std::time::Duration;
 mod aws_s3;
 mod ftp;
 mod prefetch;
+mod progress;
 mod upload;
 
 const VERSION: &str = "1.3.7";

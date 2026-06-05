@@ -1,6 +1,7 @@
 use crate::{Config, ProcessedRecord};
+use crate::progress::{spinner_style, transfer_bar_style};
 use anyhow::{anyhow, Result};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -96,20 +97,15 @@ pub async fn process_downloads(
             // 🟢 ProgressBar init: Show bar if size available, else show Spinner
             let pb = if t_size > 0 {
                 let p = mp.add(ProgressBar::new(t_size));
-                // Style: [Prefix] Spinner [Bar] Downloaded/Total (Percent%) Message
-                p.set_style(ProgressStyle::with_template("{spinner:.green} {prefix:>15.bold.cyan} ║{bar:30.cyan/blue}║ {percent:>3}% {bytes:>10}/{total_bytes:>10} │ {binary_bytes_per_sec:>10} {msg}")
-                    .unwrap()
-                    .progress_chars("█▓░"));
+                p.set_style(transfer_bar_style());
                 p
             } else {
                 let p = mp.add(ProgressBar::new_spinner());
-                p.set_style(ProgressStyle::with_template("{prefix:.bold.dim} {spinner:.green} {msg}")
-                    .unwrap()
-                    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"));
+                p.set_style(spinner_style());
                 p
             };
             
-            pb.set_prefix(format!("[{}]", t_file));
+            pb.set_prefix(t_file.clone());
             pb.enable_steady_tick(Duration::from_millis(120));
 
             let output_file_path = output_dir.join(&t_file);
@@ -122,7 +118,7 @@ pub async fn process_downloads(
                          // Size matches, verify MD5 first
                          pb.set_message("🔍 Checking existing file...");
                          if let Ok(true) = verify_md5(&output_file_path, &t_md5).await {
-                             pb.finish_with_message("⏩ Skipped (Verified)");
+                             pb.finish_and_clear();
                              return Ok(());
                          }
                      } else if meta.len() > 0 {
@@ -132,7 +128,7 @@ pub async fn process_downloads(
                 }
             }
 
-            pb.set_message("📥 Downloading...");
+            pb.set_message("Downloading");
 
             // 🟢 Start background monitor: Check file size every 500ms and update progress
             let monitor_path = output_file_path.clone();
@@ -178,10 +174,10 @@ pub async fn process_downloads(
                 pb.set_position(t_size);
             }
 
-            pb.set_message("🔍 Verifying MD5...");
+            pb.set_message("Verifying MD5");
             match verify_md5(&output_file_path, &t_md5).await {
                 Ok(true) => {
-                    pb.finish_with_message("✅ Done & Verified");
+                    pb.finish_and_clear();
                     Ok(())
                 }
                 Ok(false) => {
