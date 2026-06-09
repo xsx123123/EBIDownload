@@ -1,5 +1,15 @@
 # EBIDownload TODO List
 
+## ✅ 已修复 Bug（记录备忘）
+
+### ~~保存配置报错 `missing field 'prefetch_path'`~~
+
+**原因**：前端传 camelCase（`prefetchPath`），后端 `ConfigInput` serde 默认认 snake_case（`prefetch_path`）。
+
+**修复**：给 `ConfigInput` 添加 `#[serde(rename_all = "camelCase")]`。
+
+---
+
 ## 🔥 高优先级
 
 ### 1. GUI 界面美化

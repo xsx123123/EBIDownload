@@ -124,6 +124,7 @@ pub async fn save_config_command(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfigInput {
     pub prefetch_path: String,
     pub fasterq_dump_path: String,
