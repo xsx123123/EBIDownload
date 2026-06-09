@@ -111,6 +111,7 @@ pub enum DownloadMethod {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadOptions {
     pub accession: Option<String>,
     pub tsv: Option<PathBuf>,
@@ -152,6 +153,7 @@ impl Default for DownloadOptions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UploadOptions {
     pub bucket: String,
     pub prefix: Option<String>,
