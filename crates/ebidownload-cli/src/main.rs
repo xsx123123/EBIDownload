@@ -217,32 +217,6 @@ impl Drop for MpWriter {
 
 
 
-struct RegexFilters {
-    include_sample: Vec<Regex>,
-    include_run: Vec<Regex>,
-    exclude_sample: Vec<Regex>,
-    exclude_run: Vec<Regex>,
-}
-
-impl RegexFilters {
-    fn new(args: &DownloadArgs) -> Result<Self> {
-        Ok(Self {
-            include_sample: args.filter_sample.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-sample")?,
-            include_run: args.filter_run.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-run")?,
-            exclude_sample: args.exclude_sample.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --exclude-sample")?,
-            exclude_run: args.exclude_run.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --exclude-run")?,
-        })
-    }
-
-    fn should_include(&self, record: &EnaRecord) -> bool {
-        if !self.include_sample.is_empty() && !self.include_sample.iter().any(|r| r.is_match(&record.sample_title)) { return false; }
-        if !self.include_run.is_empty() && !self.include_run.iter().any(|r| r.is_match(&record.run_accession)) { return false; }
-        if !self.exclude_sample.is_empty() && self.exclude_sample.iter().any(|r| r.is_match(&record.sample_title)) { return false; }
-        if !self.exclude_run.is_empty() && self.exclude_run.iter().any(|r| r.is_match(&record.run_accession)) { return false; }
-        true
-    }
-}
-
 // Network health check
 async fn check_network_health() {
     info!("🏥 Performing network connectivity check...");
@@ -324,7 +298,12 @@ async fn main() -> ExitCode {
 // ============================================================
 
 async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
-    let filters = RegexFilters::new(args)?;
+    let filters = RegexFilters {
+        include_sample: args.filter_sample.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-sample")?,
+        include_run: args.filter_run.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --filter-run")?,
+        exclude_sample: args.exclude_sample.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --exclude-sample")?,
+        exclude_run: args.exclude_run.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>().context("Invalid regex pattern for --exclude-run")?,
+    };
     let config = load_config(&cli.yaml).context("Failed to load YAML configuration")?;
 
     info!("📁 Output directory: {}", args.output.display());
@@ -348,7 +327,7 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
 
     save_metadata_tsv(&filtered_records, &args.output, args.accession.as_deref())?;
 
-    let processed = process_records(filtered_records, args.pe_only)?;
+    let processed = process_records(filtered_records, args.pe_only, None)?;
     save_md5_files(&processed, &args.output, args.accession.as_deref())?;
 
     if args.dry_run {

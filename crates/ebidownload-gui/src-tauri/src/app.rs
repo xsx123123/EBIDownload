@@ -213,7 +213,9 @@ async fn run_download_async(
     };
 
     app_handle.emit("download-event", DownloadEvent::Metadata { records: records.clone() })?;
-    let processed = process_records(records, options.pe_only)?;
+    
+    let filters = RegexFilters::new(&options)?;
+    let processed = process_records(records, options.pe_only, Some(&filters))?;
     app_handle.emit("download-event", DownloadEvent::Started { total: processed.len() })?;
 
     if options.dry_run {

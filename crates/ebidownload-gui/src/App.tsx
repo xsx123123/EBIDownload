@@ -36,7 +36,7 @@ function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<Record<string, { percent: number; status: string }>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, { percent: number; status: string }>>({});
-  const [logs, setLogs] = useState<{ level: string; message: string }[]>([]);
+  const [logs, setLogs] = useState<{ level: string; message: string; time: string }[]>([]);
 
   // Download form state
   const [downloadForm, setDownloadForm] = useState({
@@ -50,6 +50,10 @@ function App() {
     peOnly: false,
     cleanupSra: false,
     dryRun: false,
+    filterSample: '',
+    filterRun: '',
+    excludeSample: '',
+    excludeRun: '',
   });
 
   // Upload form state
@@ -107,7 +111,8 @@ function App() {
   };
 
   const addLog = (level: string, message: string) => {
-    setLogs(prev => [...prev.slice(-100), { level, message }]);
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    setLogs(prev => [...prev.slice(-100), { level, message, time }]);
   };
 
   const handleDownloadEvent = (event: DownloadEvent) => {
@@ -196,6 +201,8 @@ function App() {
     }
 
     try {
+      const splitFilters = (s: string) => s.split(/[,\n]/).map(item => item.trim()).filter(item => item !== '');
+      
       await invoke('start_download_command', {
         options: {
           accession: downloadForm.accession || null,
@@ -207,10 +214,10 @@ function App() {
           chunkSize: downloadForm.chunkSize,
           prefetchMaxSize: '100G',
           peOnly: downloadForm.peOnly,
-          filterSample: [],
-          filterRun: [],
-          excludeSample: [],
-          excludeRun: [],
+          filterSample: splitFilters(downloadForm.filterSample),
+          filterRun: splitFilters(downloadForm.filterRun),
+          excludeSample: splitFilters(downloadForm.excludeSample),
+          excludeRun: splitFilters(downloadForm.excludeRun),
           cleanupSra: downloadForm.cleanupSra,
           dryRun: downloadForm.dryRun,
         },
@@ -282,7 +289,7 @@ function App() {
     <div className="container">
       <div className="header">
         <h1>EBIDownload</h1>
-        <p>Download and upload sequencing data</p>
+        <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Automated Bioinformatics Data Retrieval</p>
       </div>
 
       <div className="tabs">
@@ -342,16 +349,46 @@ function App() {
         )}
       </div>
 
-      <div className="log-container">
-        {logs.map((log, i) => (
-          <div key={i} className={`log-entry log-${log.level}`}>
-            {log.message}
-          </div>
-        ))}
+      <div className="card" style={{ marginTop: '2rem' }}>
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          Logs
+        </div>
+        <div className="log-container">
+          {logs.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>System logs will appear here...</div>
+          ) : (
+            logs.map((log, i) => (
+              <div key={i} className={`log-entry log-${log.level}`}>
+                <span className="log-time">[{log.time}]</span>
+                <span className="log-level">{log.level.toUpperCase()}</span>
+                <span className="log-msg">{log.message}</span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
+// Helper for status badge class
+const getStatusClass = (status: string) => {
+  if (status === 'Downloading') return 'status-downloading';
+  if (status === 'Converting' || status === 'Compressing') return 'status-converting';
+  if (status === 'Completed') return 'status-completed';
+  return '';
+};
+
+// Helper for progress bar class
+const getProgressBarClass = (status: string) => {
+  if (status === 'Downloading') return '';
+  if (status === 'Converting' || status === 'Compressing') return 'converting';
+  if (status === 'Completed') return 'completed';
+  return '';
+};
 
 // Download Tab Component
 function DownloadTab({
@@ -379,182 +416,320 @@ function DownloadTab({
     }
   };
 
+  const shouldInclude = (record: EnaRecord) => {
+    try {
+      const splitFilters = (s: string) => s.split(/[,\n]/).map(item => item.trim()).filter(item => item !== '');
+      
+      const incSample = splitFilters(form.filterSample).map(p => new RegExp(p, 'i'));
+      const incRun = splitFilters(form.filterRun).map(p => new RegExp(p, 'i'));
+      const excSample = splitFilters(form.excludeSample).map(p => new RegExp(p, 'i'));
+      const excRun = splitFilters(form.excludeRun).map(p => new RegExp(p, 'i'));
+
+      if (incSample.length > 0 && !incSample.some(r => r.test(record.sample_title))) return false;
+      if (incRun.length > 0 && !incRun.some(r => r.test(record.run_accession))) return false;
+      if (excSample.length > 0 && excSample.some(r => r.test(record.sample_title))) return false;
+      if (excRun.length > 0 && excRun.some(r => r.test(record.run_accession))) return false;
+      
+      return true;
+    } catch (e) {
+      return true;
+    }
+  };
+
+  const filteredCount = metadata.filter(shouldInclude).length;
+
   return (
     <div className="download-tab">
-      <div className="form-row">
-        <div className="form-group">
-          <label>Accession (e.g., PRJNA123456)</label>
-          <input
-            type="text"
-            value={form.accession}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, accession: e.target.value }))}
-            disabled={isDownloading}
-            placeholder="PRJNA..."
-          />
-        </div>
-        <div className="form-group">
-          <label>Or TSV File</label>
-          <div className="file-input">
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Source Information
+          </div>
+          <div className="form-group">
+            <label>Accession (e.g., PRJNA123456)</label>
             <input
               type="text"
-              value={form.tsv}
-              readOnly
-              placeholder="Select a TSV file"
+              value={form.accession}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, accession: e.target.value }))}
+              disabled={isDownloading}
+              placeholder="Enter Project or Study Accession"
             />
-            <button onClick={handleSelectTsv} disabled={isDownloading}>
-              Browse
-            </button>
+          </div>
+          <div className="form-group">
+            <label>Or TSV File</label>
+            <div className="form-row">
+              <input
+                type="text"
+                value={form.tsv}
+                readOnly
+                placeholder="Select a TSV file"
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-secondary" onClick={handleSelectTsv} disabled={isDownloading}>
+                Browse
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Download Settings
+          </div>
+          <div className="form-group">
+            <label>Output Directory</label>
+            <div className="form-row">
+              <input
+                type="text"
+                value={form.output}
+                readOnly
+                placeholder="Where to save files"
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-secondary" onClick={handleSelectOutput} disabled={isDownloading}>
+                Browse
+              </button>
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Method</label>
+            <select
+              value={form.method}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, method: e.target.value as any }))}
+              disabled={isDownloading}
+            >
+              <option value="Aws">AWS S3 (Recommended)</option>
+              <option value="Ftp">FTP / Aspera</option>
+              <option value="Prefetch">NCBI Prefetch</option>
+              <option value="Auto">Automatic Fallback</option>
+            </select>
           </div>
         </div>
       </div>
 
-      <div className="form-group">
-        <label>Output Directory</label>
-        <div className="file-input">
-          <input
-            type="text"
-            value={form.output}
-            readOnly
-            placeholder="Select output directory"
-          />
-          <button onClick={handleSelectOutput} disabled={isDownloading}>
-            Browse
-          </button>
+      <div className="card">
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          Data Filtering (Regex)
+        </div>
+        <div className="grid-2">
+          <div>
+            <div className="form-group">
+              <label>Include Sample (Sample Title)</label>
+              <input
+                type="text"
+                value={form.filterSample}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, filterSample: e.target.value }))}
+                disabled={isDownloading}
+                placeholder="Regex (e.g., Liver|Lung)"
+              />
+            </div>
+            <div className="form-group">
+              <label>Include Run (Run Accession)</label>
+              <input
+                type="text"
+                value={form.filterRun}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, filterRun: e.target.value }))}
+                disabled={isDownloading}
+                placeholder="Regex (e.g., SRR123.*)"
+              />
+            </div>
+          </div>
+          <div>
+            <div className="form-group">
+              <label>Exclude Sample</label>
+              <input
+                type="text"
+                value={form.excludeSample}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, excludeSample: e.target.value }))}
+                disabled={isDownloading}
+                placeholder="Regex pattern"
+              />
+            </div>
+            <div className="form-group">
+              <label>Exclude Run</label>
+              <input
+                type="text"
+                value={form.excludeRun}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, excludeRun: e.target.value }))}
+                disabled={isDownloading}
+                placeholder="Regex pattern"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="form-row">
-        <div className="form-group">
-          <label>Download Method</label>
-          <select
-            value={form.method}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, method: e.target.value as any }))}
-            disabled={isDownloading}
-          >
-            <option value="Aws">AWS S3 (Fastest)</option>
-            <option value="Ftp">FTP</option>
-            <option value="Prefetch">Prefetch</option>
-            <option value="Auto">Auto (AWS with fallback)</option>
-          </select>
+      <div className="card">
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20v-6M9 20v-10M15 20v-4M18 20v-8M6 20v-2"></path>
+          </svg>
+          Advanced Options
         </div>
-        <div className="form-group">
-          <label>Parallel Files</label>
-          <input
-            type="number"
-            min={1}
-            max={32}
-            value={form.multithreads}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, multithreads: parseInt(e.target.value) }))}
-            disabled={isDownloading}
-          />
-        </div>
-        <div className="form-group">
-          <label>Threads per File</label>
-          <input
-            type="number"
-            min={1}
-            max={32}
-            value={form.awsThreads}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, awsThreads: parseInt(e.target.value) }))}
-            disabled={isDownloading}
-          />
-        </div>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>
-            <input
-              type="checkbox"
-              checked={form.peOnly}
-              onChange={(e) => setForm((prev: any) => ({ ...prev, peOnly: e.target.checked }))}
-              disabled={isDownloading}
-            />
-            PE Only (skip SE)
-          </label>
-        </div>
-        <div className="form-group">
-          <label>
-            <input
-              type="checkbox"
-              checked={form.cleanupSra}
-              onChange={(e) => setForm((prev: any) => ({ ...prev, cleanupSra: e.target.checked }))}
-              disabled={isDownloading}
-            />
-            Cleanup SRA files
-          </label>
-        </div>
-        <div className="form-group">
-          <label>
-            <input
-              type="checkbox"
-              checked={form.dryRun}
-              onChange={(e) => setForm((prev: any) => ({ ...prev, dryRun: e.target.checked }))}
-              disabled={isDownloading}
-            />
-            Dry Run
-          </label>
+        <div className="grid-2">
+          <div>
+            <div className="form-group">
+              <label>Parallel File Downloads</label>
+              <input
+                type="number"
+                min={1}
+                value={form.multithreads}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, multithreads: parseInt(e.target.value) }))}
+                disabled={isDownloading}
+              />
+            </div>
+            <div className="form-group">
+              <label>Threads per File (AWS)</label>
+              <input
+                type="number"
+                min={1}
+                value={form.awsThreads}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, awsThreads: parseInt(e.target.value) }))}
+                disabled={isDownloading}
+              />
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', justifyContent: 'center' }}>
+            <label className="checkbox-group">
+              <input
+                type="checkbox"
+                checked={form.peOnly}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, peOnly: e.target.checked }))}
+                disabled={isDownloading}
+              />
+              <span>Paired-End Only (skip Single-End)</span>
+            </label>
+            <label className="checkbox-group">
+              <input
+                type="checkbox"
+                checked={form.cleanupSra}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, cleanupSra: e.target.checked }))}
+                disabled={isDownloading}
+              />
+              <span>Cleanup SRA files after conversion</span>
+            </label>
+            <label className="checkbox-group">
+              <input
+                type="checkbox"
+                checked={form.dryRun}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, dryRun: e.target.checked }))}
+                disabled={isDownloading}
+              />
+              <span>Dry Run (simulate only)</span>
+            </label>
+          </div>
         </div>
       </div>
 
-      <div className="button-row">
+      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginBottom: '2rem' }}>
         <button
           className="btn btn-secondary"
           onClick={onFetchMetadata}
           disabled={isDownloading || (!form.accession && !form.tsv)}
         >
-          Fetch Metadata
+          Check Records
         </button>
         <button
           className="btn btn-primary"
           onClick={onStartDownload}
           disabled={isDownloading || !form.output || (!form.accession && !form.tsv)}
         >
-          {isDownloading ? 'Downloading...' : 'Start Download'}
+          {isDownloading ? (
+            <>
+              <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+              </svg>
+              Processing...
+            </>
+          ) : 'Execute Download'}
         </button>
       </div>
 
-      {metadata.length > 0 && (
-        <div className="metadata-section">
-          <h3>Records ({metadata.length})</h3>
-          <div className="metadata-table">
+      <div className="card">
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+          Metadata & Progress
+          {metadata.length > 0 && (
+            <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {filteredCount} of {metadata.length} records selected
+            </span>
+          )}
+        </div>
+        {metadata.length > 0 ? (
+          <div className="metadata-container">
             <table>
               <thead>
                 <tr>
                   <th>Run Accession</th>
                   <th>Sample Title</th>
                   <th>Layout</th>
-                  <th>Progress</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {metadata.map((record: EnaRecord) => (
-                  <tr key={record.run_accession}>
-                    <td>{record.run_accession}</td>
-                    <td>{record.sample_title}</td>
-                    <td>{record.library_layout || 'N/A'}</td>
-                    <td>
-                      {progress[record.run_accession] ? (
-                        <div className="progress-cell">
-                          <div className="progress-bar-small">
-                            <div
-                              className="progress-fill"
-                              style={{ width: `${progress[record.run_accession].percent}%` }}
-                            />
+                {metadata.map((record: EnaRecord) => {
+                  const isIncluded = shouldInclude(record);
+                  return (
+                    <tr key={record.run_accession} style={{ opacity: isIncluded ? 1 : 0.35 }}>
+                      <td style={{ fontWeight: 600, color: isIncluded ? 'var(--primary)' : 'var(--text-muted)' }}>{record.run_accession}</td>
+                      <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.sample_title}</td>
+                      <td><span className="status-badge" style={{ backgroundColor: '#334155', color: '#f1f5f9' }}>{record.library_layout || 'N/A'}</span></td>
+                      <td>
+                        {progress[record.run_accession] ? (
+                          <div style={{ minWidth: '150px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+                              <span className={`status-badge ${getStatusClass(progress[record.run_accession].status)}`}>
+                                {progress[record.run_accession].status}
+                              </span>
+                              <span>{Math.round(progress[record.run_accession].percent)}%</span>
+                            </div>
+                            <div className="progress-bar-container">
+                              <div
+                                className={`progress-bar ${getProgressBarClass(progress[record.run_accession].status)}`}
+                                style={{ width: `${progress[record.run_accession].percent}%` }}
+                              />
+                            </div>
                           </div>
-                          <span>{progress[record.run_accession].status}</span>
-                        </div>
-                      ) : (
-                        <span className="pending">Pending</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        ) : (
+                          <span className="status-badge" style={{ opacity: 0.5 }}>{isIncluded ? 'Pending' : 'Excluded'}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+              <path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"></path>
+              <polygon points="18 2 22 6 12 16 8 16 8 12 18 2"></polygon>
+            </svg>
+            <p>No metadata records loaded.</p>
+            <p style={{ fontSize: '0.8rem' }}>Enter an accession or select a TSV file and click "Check Records".</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -578,130 +753,164 @@ function UploadTab({
 
   return (
     <div className="upload-tab">
-      <div className="form-group">
-        <label>Bucket Name</label>
-        <input
-          type="text"
-          value={form.bucket}
-          onChange={(e) => setForm((prev: any) => ({ ...prev, bucket: e.target.value }))}
-          disabled={isUploading}
-          placeholder="my-bucket"
-        />
-      </div>
-
-      <div className="form-group">
-        <label>Key Prefix (optional)</label>
-        <input
-          type="text"
-          value={form.prefix}
-          onChange={(e) => setForm((prev: any) => ({ ...prev, prefix: e.target.value }))}
-          disabled={isUploading}
-          placeholder="path/to/files"
-        />
-      </div>
-
-      <div className="form-group">
-        <label>Files to Upload</label>
-        <div className="file-input">
-          <input
-            type="text"
-            value={form.files.length > 0 ? `${form.files.length} file(s)` : ''}
-            readOnly
-            placeholder="Select files"
-          />
-          <button onClick={handleSelectFiles} disabled={isUploading}>
-            Browse
-          </button>
-        </div>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>Region</label>
-          <input
-            type="text"
-            value={form.region}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, region: e.target.value }))}
-            disabled={isUploading}
-            placeholder="us-east-1"
-          />
-        </div>
-        <div className="form-group">
-          <label>Concurrent Uploads</label>
-          <input
-            type="number"
-            min={1}
-            max={32}
-            value={form.concurrent}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, concurrent: parseInt(e.target.value) }))}
-            disabled={isUploading}
-          />
-        </div>
-      </div>
-
-      <div className="form-row">
-        <div className="form-group">
-          <label>
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            Destination (S3)
+          </div>
+          <div className="form-group">
+            <label>Bucket Name</label>
             <input
-              type="checkbox"
-              checked={form.applyPolicy}
-              onChange={(e) => setForm((prev: any) => ({ ...prev, applyPolicy: e.target.checked }))}
+              type="text"
+              value={form.bucket}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, bucket: e.target.value }))}
+              disabled={isUploading}
+              placeholder="e.g., sequence-data-bucket"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Key Prefix (optional)</label>
+            <input
+              type="text"
+              value={form.prefix}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, prefix: e.target.value }))}
+              disabled={isUploading}
+              placeholder="project-name/runs/"
+            />
+          </div>
+          <div className="form-group">
+            <label>Region</label>
+            <input
+              type="text"
+              value={form.region}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, region: e.target.value }))}
+              disabled={isUploading}
+              placeholder="us-east-1"
+            />
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            Files to Upload
+          </div>
+          <div className="form-group">
+            <label>Select Files</label>
+            <div className="form-row">
+              <input
+                type="text"
+                value={form.files.length > 0 ? `${form.files.length} file(s) selected` : ''}
+                readOnly
+                placeholder="No files selected"
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-secondary" onClick={handleSelectFiles} disabled={isUploading}>
+                Browse
+              </button>
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Concurrent Uploads</label>
+            <input
+              type="number"
+              min={1}
+              value={form.concurrent}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, concurrent: parseInt(e.target.value) }))}
               disabled={isUploading}
             />
-            Apply NCBI Policy
-          </label>
-        </div>
-        <div className="form-group">
-          <label>
-            <input
-              type="checkbox"
-              checked={form.dryRun}
-              onChange={(e) => setForm((prev: any) => ({ ...prev, dryRun: e.target.checked }))}
-              disabled={isUploading}
-            />
-            Dry Run
-          </label>
+          </div>
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+            <label className="checkbox-group">
+              <input
+                type="checkbox"
+                checked={form.applyPolicy}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, applyPolicy: e.target.checked }))}
+                disabled={isUploading}
+              />
+              <span>NCBI Policy</span>
+            </label>
+            <label className="checkbox-group">
+              <input
+                type="checkbox"
+                checked={form.dryRun}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, dryRun: e.target.checked }))}
+                disabled={isUploading}
+              />
+              <span>Dry Run</span>
+            </label>
+          </div>
         </div>
       </div>
 
-      <div className="button-row">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
         <button
           className="btn btn-primary"
           onClick={onStartUpload}
           disabled={isUploading || !form.bucket || form.files.length === 0}
         >
-          {isUploading ? 'Uploading...' : 'Start Upload'}
+          {isUploading ? 'Uploading...' : 'Initiate Upload'}
         </button>
       </div>
 
-      {form.files.length > 0 && (
-        <div className="file-list-section">
-          <h3>Files ({form.files.length})</h3>
-          <div className="file-list">
+      <div className="card">
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          Upload Progress
+        </div>
+        {form.files.length > 0 ? (
+          <div className="progress-list">
             {form.files.map((file: string, i: number) => {
               const filename = file.split(/[/\\]/).pop() || file;
+              const item = progress[filename];
               return (
-                <div key={i} className="file-item">
-                  <span>{filename}</span>
-                  {progress[filename] ? (
-                    <div className="progress-cell">
-                      <div className="progress-bar-small">
-                        <div
-                          className="progress-fill"
-                          style={{ width: `${progress[filename].percent}%` }}
-                        />
-                      </div>
-                      <span>{progress[filename].status}</span>
+                <div key={i} className="progress-item">
+                  <div className="progress-header">
+                    <span style={{ fontWeight: 600 }}>{filename}</span>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {item ? (
+                        <>
+                          <span className={`status-badge ${getStatusClass(item.status)}`}>{item.status}</span>
+                          <span>{Math.round(item.percent)}%</span>
+                        </>
+                      ) : (
+                        <span className="status-badge" style={{ opacity: 0.5 }}>Waiting</span>
+                      )}
                     </div>
-                  ) : (
-                    <span className="pending">Pending</span>
-                  )}
+                  </div>
+                  <div className="progress-bar-container">
+                    <div
+                      className={`progress-bar ${item ? getProgressBarClass(item.status) : ''}`}
+                      style={{ width: `${item ? item.percent : 0}%` }}
+                    />
+                  </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <p>No files queued for upload.</p>
+            <p style={{ fontSize: '0.8rem' }}>Browse and select local files to begin.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -722,36 +931,64 @@ function SettingsTab({
 
   return (
     <div className="settings-tab">
-      <div className="form-group">
-        <label>Prefetch Path</label>
-        <div className="file-input">
-          <input
-            type="text"
-            value={form.prefetchPath}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, prefetchPath: e.target.value }))}
-            placeholder="/path/to/prefetch"
-          />
-          <button onClick={createFileSelector('prefetchPath')}>Browse</button>
+      <div className="card">
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+          </svg>
+          Software Executables
+        </div>
+        <div className="form-group">
+          <label>NCBI Prefetch Path</label>
+          <div className="form-row">
+            <input
+              type="text"
+              value={form.prefetchPath}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, prefetchPath: e.target.value }))}
+              placeholder="e.g., /usr/local/bin/prefetch"
+              style={{ flex: 1 }}
+            />
+            <button className="btn btn-secondary" onClick={createFileSelector('prefetchPath')}>Browse</button>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>fasterq-dump Path</label>
+          <div className="form-row">
+            <input
+              type="text"
+              value={form.fasterqDumpPath}
+              onChange={(e) => setForm((prev: any) => ({ ...prev, fasterqDumpPath: e.target.value }))}
+              placeholder="e.g., /usr/local/bin/fasterq-dump"
+              style={{ flex: 1 }}
+            />
+            <button className="btn btn-secondary" onClick={createFileSelector('fasterqDumpPath')}>Browse</button>
+          </div>
+        </div>
+        
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <button className="btn btn-primary" onClick={onSaveConfig}>
+            Save Configuration
+          </button>
         </div>
       </div>
-
-      <div className="form-group">
-        <label>fasterq-dump Path</label>
-        <div className="file-input">
-          <input
-            type="text"
-            value={form.fasterqDumpPath}
-            onChange={(e) => setForm((prev: any) => ({ ...prev, fasterqDumpPath: e.target.value }))}
-            placeholder="/path/to/fasterq-dump"
-          />
-          <button onClick={createFileSelector('fasterqDumpPath')}>Browse</button>
+      
+      <div className="card">
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          About EBIDownload
         </div>
-      </div>
-
-      <div className="button-row">
-        <button className="btn btn-primary" onClick={onSaveConfig}>
-          Save Config
-        </button>
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+          EBIDownload is a high-performance tool for downloading sequencing data from ENA/SRA.
+          It supports multiple protocols and automatic format conversion.
+        </p>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
+          Version: 0.1.0 | Environment: Production
+        </p>
       </div>
     </div>
   );

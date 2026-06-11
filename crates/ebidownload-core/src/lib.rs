@@ -7,6 +7,7 @@ pub mod progress;
 pub mod upload;
 
 use anyhow::{anyhow, Result};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -234,12 +235,65 @@ pub fn read_tsv_data(tsv_path: &Path) -> Result<Vec<EnaRecord>> {
     Ok(records)
 }
 
+pub struct RegexFilters {
+    pub include_sample: Vec<Regex>,
+    pub include_run: Vec<Regex>,
+    pub exclude_sample: Vec<Regex>,
+    pub exclude_run: Vec<Regex>,
+}
+
+impl RegexFilters {
+    pub fn new(options: &DownloadOptions) -> Result<Self> {
+        let include_sample = options.filter_sample.iter()
+            .map(|s| Regex::new(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow!("Invalid regex pattern for filter_sample: {}", e))?;
+        
+        let include_run = options.filter_run.iter()
+            .map(|s| Regex::new(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow!("Invalid regex pattern for filter_run: {}", e))?;
+            
+        let exclude_sample = options.exclude_sample.iter()
+            .map(|s| Regex::new(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow!("Invalid regex pattern for exclude_sample: {}", e))?;
+            
+        let exclude_run = options.exclude_run.iter()
+            .map(|s| Regex::new(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow!("Invalid regex pattern for exclude_run: {}", e))?;
+
+        Ok(Self {
+            include_sample,
+            include_run,
+            exclude_sample,
+            exclude_run,
+        })
+    }
+
+    pub fn should_include(&self, record: &EnaRecord) -> bool {
+        if !self.include_sample.is_empty() && !self.include_sample.iter().any(|r| r.is_match(&record.sample_title)) { return false; }
+        if !self.include_run.is_empty() && !self.include_run.iter().any(|r| r.is_match(&record.run_accession)) { return false; }
+        if !self.exclude_sample.is_empty() && self.exclude_sample.iter().any(|r| r.is_match(&record.sample_title)) { return false; }
+        if !self.exclude_run.is_empty() && self.exclude_run.iter().any(|r| r.is_match(&record.run_accession)) { return false; }
+        true
+    }
+}
+
 pub fn process_records(
     records: Vec<EnaRecord>,
     pe_only: bool,
+    filters: Option<&RegexFilters>,
 ) -> Result<Vec<ProcessedRecord>> {
     let mut processed = Vec::new();
     for record in records {
+        if let Some(f) = filters {
+            if !f.should_include(&record) {
+                continue;
+            }
+        }
+
         let ftp_urls: Vec<&str> = record
             .fastq_ftp
             .split(';')
