@@ -25,7 +25,7 @@ pub fn run() {
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 while let Some(entry) = log_rx.recv().await {
                     let _ = app_handle.emit("app-log", entry);
                 }

@@ -47,8 +47,14 @@ interface DepStatusMissing {
 
 type DepStatus = DepStatusReady | DepStatusMissing;
 
+interface DepInstallProgress {
+  step: string;
+  percent: number;
+  message: string;
+}
+
 function App() {
-  const [activeTab, setActiveTab] = useState<'download' | 'upload' | 'settings'>('download');
+  const [activeTab, setActiveTab] = useState<'download' | 'upload' | 'settings' | 'about'>('download');
   const [_config, setConfig] = useState<Config | null>(null);
   const [metadata, setMetadata] = useState<EnaRecord[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -59,6 +65,8 @@ function App() {
   const [depStatus, setDepStatus] = useState<'checking' | 'ready' | 'missing'>('checking');
   const [depInfo, setDepInfo] = useState<DepStatus | null>(null);
   const [isInstallingDeps, setIsInstallingDeps] = useState(false);
+  const [depProgress, setDepProgress] = useState<DepInstallProgress | null>(null);
+  const [depModalDismissed, setDepModalDismissed] = useState(false);
 
   // Download form state
   const [downloadForm, setDownloadForm] = useState({
@@ -122,7 +130,13 @@ function App() {
     const unlistenDepsInstalled = listen('deps-installed', () => {
       addLog('info', 'Dependencies installed');
       setIsInstallingDeps(false);
+      setDepProgress(null);
+      setDepModalDismissed(false);
       checkDeps();
+    });
+
+    const unlistenDepProgress = listen<DepInstallProgress>('dep-progress', (event) => {
+      setDepProgress(event.payload);
     });
 
     return () => {
@@ -130,6 +144,7 @@ function App() {
       unlistenUpload.then(f => f());
       unlistenLog.then(f => f());
       unlistenDepsInstalled.then(f => f());
+      unlistenDepProgress.then(f => f());
     };
   }, []);
 
@@ -153,12 +168,18 @@ function App() {
   const handleInstallDeps = async () => {
     if (isInstallingDeps) return;
     setIsInstallingDeps(true);
+    setDepProgress({
+      step: 'prepare',
+      percent: 0,
+      message: 'Preparing to install sra-tools...',
+    });
     addLog('info', 'Installing sra-tools...');
     try {
       await invoke('install_deps_command');
     } catch (e) {
       addLog('error', `Failed to install sra-tools: ${e}`);
       setIsInstallingDeps(false);
+      setDepProgress(null);
     }
   };
 
@@ -332,6 +353,8 @@ function App() {
       });
       addLog('info', 'Config saved successfully');
       await loadConfig();
+      // Re-check dependencies after manual path configuration.
+      await checkDeps();
     } catch (e) {
       addLog('error', `Failed to save config: ${e}`);
     }
@@ -354,22 +377,104 @@ function App() {
 
   return (
     <div className="container">
-      {depStatus === 'missing' && (
+      {depStatus === 'missing' && !depModalDismissed && (
         <div className="modal-overlay">
-          <div className="modal-card">
-            <h2>Missing Dependency: sra-tools</h2>
-            <p>
-              EBIDownload needs NCBI sra-tools (<code>prefetch</code> & <code>fasterq-dump</code>) to download SRA data.
-            </p>
-            {depInfo?.status === 'Missing' && (
-              <p className="modal-reason">{depInfo.reason}</p>
-            )}
+          <div className="modal-card dep-modal">
             <button
-              className="btn-primary"
-              onClick={handleInstallDeps}
+              className="modal-close"
+              onClick={() => setDepModalDismissed(true)}
+              aria-label="Close"
               disabled={isInstallingDeps}
             >
-              {isInstallingDeps ? 'Installing...' : 'Install sra-tools automatically'}
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+
+            <div className="modal-icon">
+              <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+
+            <h2>sra-tools not found</h2>
+            <p className="modal-subtitle">
+              EBIDownload needs NCBI <code>sra-tools</code> (<code>prefetch</code> & <code>fasterq-dump</code>) to download SRA data.
+            </p>
+
+            {depInfo?.status === 'Missing' && (
+              <div className="modal-reason">{depInfo.reason}</div>
+            )}
+
+            {isInstallingDeps && depProgress && (
+              <div className="dep-progress">
+                <div className="dep-progress-header">
+                  <span>{depProgress.message}</span>
+                  <span>{Math.round(depProgress.percent)}%</span>
+                </div>
+                <div className="progress-bar-container" style={{ height: '8px' }}>
+                  <div
+                    className="progress-bar"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, depProgress.percent))}%`,
+                      transition: 'width 0.3s ease',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-primary btn-install"
+                onClick={handleInstallDeps}
+                disabled={isInstallingDeps}
+              >
+                {isInstallingDeps ? (
+                  <>
+                    <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                    </svg>
+                    Installing...
+                  </>
+                ) : (
+                  <>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Auto-install sra-tools
+                  </>
+                )}
+              </button>
+              <button
+                className="btn btn-secondary btn-configure"
+                onClick={() => {
+                  setDepModalDismissed(true);
+                  setActiveTab('settings');
+                }}
+                disabled={isInstallingDeps}
+              >
+                Configure manually
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {depStatus === 'missing' && depModalDismissed && (
+        <div className="dep-warning-banner">
+          <span>sra-tools is missing. Some download features may not work.</span>
+          <div className="dep-warning-actions">
+            <button className="btn-link" onClick={() => setDepModalDismissed(false)}>
+              Install now
+            </button>
+            <button className="btn-link" onClick={() => setActiveTab('settings')}>
+              Configure paths
             </button>
           </div>
         </div>
@@ -398,6 +503,12 @@ function App() {
           onClick={() => setActiveTab('settings')}
         >
           Settings
+        </button>
+        <button
+          className={`tab ${activeTab === 'about' ? 'active' : ''}`}
+          onClick={() => setActiveTab('about')}
+        >
+          About
         </button>
       </div>
 
@@ -435,6 +546,8 @@ function App() {
             selectFile={selectFile}
           />
         )}
+
+        {activeTab === 'about' && <AboutTab />}
       </div>
 
       <div className="card" style={{ marginTop: '2rem' }}>
@@ -1060,22 +1173,45 @@ function SettingsTab({
           </button>
         </div>
       </div>
-      
+    </div>
+  );
+}
+
+// About Tab Component
+function AboutTab() {
+  return (
+    <div className="about-tab">
+      <div className="card about-hero">
+        <div className="about-logo">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </div>
+        <h1>EBIDownload</h1>
+        <p className="about-version">Version 1.4.0</p>
+        <p className="about-description">
+          A high-performance tool for downloading sequencing data from ENA/SRA.
+          Supports multiple protocols and automatic format conversion.
+        </p>
+        <blockquote className="cosmic-quote">
+          “We are only borrowing these carbon, hydrogen, and oxygen atoms from the universe for a few decades,
+          using them to briefly experience this world. Every atom that makes up our brain and body comes from
+          the nuclear fusion explosions inside ancient stars billions of years ago. When life ends, we do not
+          vanish into nothingness — we simply return to the vast universe and continue to exist in another form.”
+        </blockquote>
+      </div>
+
       <div className="card">
         <div className="card-title">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
           </svg>
-          About EBIDownload
+          License & Credits
         </div>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-          EBIDownload is a high-performance tool for downloading sequencing data from ENA/SRA.
-          It supports multiple protocols and automatic format conversion.
-        </p>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
-          Version: 0.1.0 | Environment: Production
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          Licensed under MIT. Built with Rust, Tauri, and React.
         </p>
       </div>
     </div>

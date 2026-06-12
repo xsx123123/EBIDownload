@@ -569,6 +569,14 @@ pub async fn check_deps_command(state: State<'_, AppState>) -> Result<crate::dep
     Ok(crate::deps::check_sra_tools(config.as_ref()))
 }
 
+/// Structured progress payload forwarded to the frontend during sra-tools installation.
+#[derive(Debug, Clone, serde::Serialize)]
+struct DepInstallProgress {
+    step: String,
+    percent: f64,
+    message: String,
+}
+
 #[::tauri::command]
 pub async fn install_deps_command(
     state: State<'_, AppState>,
@@ -578,32 +586,98 @@ pub async fn install_deps_command(
     let app_handle_cb = app_handle.clone();
 
     let progress_cb: crate::deps::DepProgressCallback = Arc::new(move |event| {
-        let (level, message) = match event {
+        let (level, message, progress) = match event {
             crate::deps::DepProgressEvent::DownloadStarted { url, size } => {
                 let size_str = size.map(|s| format!("{} bytes", s)).unwrap_or_else(|| "unknown".to_string());
-                ("info".to_string(), format!("Downloading sra-tools from {} ({})", url, size_str))
+                let message = format!("Downloading sra-tools from {} ({})", url, size_str);
+                (
+                    "info".to_string(),
+                    message.clone(),
+                    DepInstallProgress {
+                        step: "download".to_string(),
+                        percent: 0.0,
+                        message,
+                    },
+                )
             }
             crate::deps::DepProgressEvent::DownloadProgress { downloaded, total } => {
                 let percent = total.map(|t| (downloaded as f64 / t as f64) * 100.0).unwrap_or(0.0);
-                ("info".to_string(), format!("Download progress: {:.1}%", percent))
+                // Map download progress to 0-70% of the overall installation.
+                let overall = percent * 0.7;
+                let message = format!("Downloading sra-tools: {:.1}%", percent);
+                (
+                    "info".to_string(),
+                    message.clone(),
+                    DepInstallProgress {
+                        step: "download".to_string(),
+                        percent: overall,
+                        message,
+                    },
+                )
             }
             crate::deps::DepProgressEvent::DownloadCompleted => {
-                ("info".to_string(), "Download completed".to_string())
+                let message = "Download completed".to_string();
+                (
+                    "info".to_string(),
+                    message.clone(),
+                    DepInstallProgress {
+                        step: "download".to_string(),
+                        percent: 70.0,
+                        message,
+                    },
+                )
             }
             crate::deps::DepProgressEvent::Verifying => {
-                ("info".to_string(), "Verifying checksum...".to_string())
+                let message = "Verifying checksum...".to_string();
+                (
+                    "info".to_string(),
+                    message.clone(),
+                    DepInstallProgress {
+                        step: "verify".to_string(),
+                        percent: 75.0,
+                        message,
+                    },
+                )
             }
             crate::deps::DepProgressEvent::Extracting => {
-                ("info".to_string(), "Extracting sra-tools...".to_string())
+                let message = "Extracting sra-tools...".to_string();
+                (
+                    "info".to_string(),
+                    message.clone(),
+                    DepInstallProgress {
+                        step: "extract".to_string(),
+                        percent: 85.0,
+                        message,
+                    },
+                )
             }
             crate::deps::DepProgressEvent::Completed => {
-                ("info".to_string(), "sra-tools installation completed".to_string())
+                let message = "sra-tools installation completed".to_string();
+                (
+                    "info".to_string(),
+                    message.clone(),
+                    DepInstallProgress {
+                        step: "complete".to_string(),
+                        percent: 100.0,
+                        message,
+                    },
+                )
             }
-            crate::deps::DepProgressEvent::Error { message } => {
-                ("error".to_string(), format!("Installation error: {}", message))
+            crate::deps::DepProgressEvent::Error { message: err } => {
+                let message = format!("Installation error: {}", err);
+                (
+                    "error".to_string(),
+                    message.clone(),
+                    DepInstallProgress {
+                        step: "error".to_string(),
+                        percent: 0.0,
+                        message,
+                    },
+                )
             }
         };
         let _ = app_handle_cb.emit("app-log", crate::logger::LogEntry { level, message });
+        let _ = app_handle_cb.emit("dep-progress", progress);
     });
 
     let paths = crate::deps::install_sra_tools(None, None, Some(progress_cb))
