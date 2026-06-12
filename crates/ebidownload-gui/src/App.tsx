@@ -62,6 +62,8 @@ function App() {
   const [downloadProgress, setDownloadProgress] = useState<Record<string, { percent: number; status: string }>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, { percent: number; status: string }>>({});
   const [logs, setLogs] = useState<{ level: string; message: string; time: string }[]>([]);
+  const [logLevelFilter, setLogLevelFilter] = useState<string>('info');
+  const [metadataExpanded, setMetadataExpanded] = useState(true);
   const [depStatus, setDepStatus] = useState<'checking' | 'ready' | 'missing'>('checking');
   const [depInfo, setDepInfo] = useState<DepStatus | null>(null);
   const [isInstallingDeps, setIsInstallingDeps] = useState(false);
@@ -553,6 +555,8 @@ function App() {
             onStartDownload={handleStartDownload}
             selectFile={selectFile}
             selectDirectory={selectDirectory}
+            metadataExpanded={metadataExpanded}
+            setMetadataExpanded={setMetadataExpanded}
           />
         )}
 
@@ -582,23 +586,39 @@ function App() {
       </div>
 
       <div className="card" style={{ marginTop: '2rem' }}>
-        <div className="card-title">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-          Logs
+        <div className="card-title" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Logs
+          </div>
+          <select
+            className="log-filter"
+            value={logLevelFilter}
+            onChange={(e) => setLogLevelFilter(e.target.value)}
+          >
+            <option value="all">All levels</option>
+            <option value="info">INFO</option>
+            <option value="warn">WARN</option>
+            <option value="error">ERROR</option>
+          </select>
         </div>
         <div className="log-container">
-          {logs.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>System logs will appear here...</div>
+          {logs.filter(log => logLevelFilter === 'all' || log.level === logLevelFilter).length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              {logLevelFilter === 'all' ? 'System logs will appear here...' : `No ${logLevelFilter.toUpperCase()} logs to display.`}
+            </div>
           ) : (
-            logs.map((log, i) => (
-              <div key={i} className={`log-entry log-${log.level}`}>
-                <span className="log-time">[{log.time}]</span>
-                <span className="log-level">{log.level.toUpperCase()}</span>
-                <span className="log-msg">{log.message}</span>
-              </div>
-            ))
+            logs
+              .filter(log => logLevelFilter === 'all' || log.level === logLevelFilter)
+              .map((log, i) => (
+                <div key={i} className={`log-entry log-${log.level}`}>
+                  <span className="log-time">[{log.time}]</span>
+                  <span className="log-level">{log.level.toUpperCase()}</span>
+                  <span className="log-msg">{log.message}</span>
+                </div>
+              ))
           )}
         </div>
       </div>
@@ -633,6 +653,8 @@ function DownloadTab({
   onStartDownload,
   selectFile,
   selectDirectory,
+  metadataExpanded,
+  setMetadataExpanded,
 }: any) {
   const handleSelectTsv = async () => {
     const selected = await selectFile(false, 'tsv');
@@ -890,76 +912,98 @@ function DownloadTab({
       </div>
 
       <div className="card">
-        <div className="card-title">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="8" y1="6" x2="21" y2="6"></line>
-            <line x1="8" y1="12" x2="21" y2="12"></line>
-            <line x1="8" y1="18" x2="21" y2="18"></line>
-            <line x1="3" y1="6" x2="3.01" y2="6"></line>
-            <line x1="3" y1="12" x2="3.01" y2="12"></line>
-            <line x1="3" y1="18" x2="3.01" y2="18"></line>
-          </svg>
-          Metadata & Progress
-          {metadata.length > 0 && (
-            <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {filteredCount} of {metadata.length} records selected
-            </span>
-          )}
-        </div>
-        {metadata.length > 0 ? (
-          <div className="metadata-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Run Accession</th>
-                  <th>Sample Title</th>
-                  <th>Layout</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {metadata.map((record: EnaRecord) => {
-                  const isIncluded = shouldInclude(record);
-                  return (
-                    <tr key={record.run_accession} style={{ opacity: isIncluded ? 1 : 0.35 }}>
-                      <td style={{ fontWeight: 600, color: isIncluded ? 'var(--primary)' : 'var(--text-muted)' }}>{record.run_accession}</td>
-                      <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.sample_title}</td>
-                      <td><span className="status-badge" style={{ backgroundColor: '#334155', color: '#f1f5f9' }}>{record.library_layout || 'N/A'}</span></td>
-                      <td>
-                        {progress[record.run_accession] ? (
-                          <div style={{ minWidth: '150px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                              <span className={`status-badge ${getStatusClass(progress[record.run_accession].status)}`}>
-                                {progress[record.run_accession].status}
-                              </span>
-                              <span>{Math.round(progress[record.run_accession].percent)}%</span>
-                            </div>
-                            <div className="progress-bar-container">
-                              <div
-                                className={`progress-bar ${getProgressBarClass(progress[record.run_accession].status)}`}
-                                style={{ width: `${progress[record.run_accession].percent}%` }}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="status-badge" style={{ opacity: 0.5 }}>{isIncluded ? 'Pending' : 'Excluded'}</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
-              <path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"></path>
-              <polygon points="18 2 22 6 12 16 8 16 8 12 18 2"></polygon>
+        <div
+          className="card-title collapsible-title"
+          onClick={() => setMetadataExpanded((prev: boolean) => !prev)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
             </svg>
-            <p>No metadata records loaded.</p>
-            <p style={{ fontSize: '0.8rem' }}>Enter an accession or select a TSV file and click "Check Records".</p>
+            Metadata & Progress
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {metadata.length > 0 && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                {filteredCount} of {metadata.length} records selected
+              </span>
+            )}
+            <svg
+              className={`chevron ${metadataExpanded ? 'expanded' : ''}`}
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+        </div>
+        {metadataExpanded && (
+          metadata.length > 0 ? (
+            <div className="metadata-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Run Accession</th>
+                    <th>Sample Title</th>
+                    <th>Layout</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metadata.map((record: EnaRecord) => {
+                    const isIncluded = shouldInclude(record);
+                    return (
+                      <tr key={record.run_accession} style={{ opacity: isIncluded ? 1 : 0.35 }}>
+                        <td style={{ fontWeight: 600, color: isIncluded ? 'var(--primary)' : 'var(--text-muted)' }}>{record.run_accession}</td>
+                        <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.sample_title}</td>
+                        <td><span className="status-badge" style={{ backgroundColor: '#334155', color: '#f1f5f9' }}>{record.library_layout || 'N/A'}</span></td>
+                        <td>
+                          {progress[record.run_accession] ? (
+                            <div style={{ minWidth: '150px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+                                <span className={`status-badge ${getStatusClass(progress[record.run_accession].status)}`}>
+                                  {progress[record.run_accession].status}
+                                </span>
+                                <span>{Math.round(progress[record.run_accession].percent)}%</span>
+                              </div>
+                              <div className="progress-bar-container">
+                                <div
+                                  className={`progress-bar ${getProgressBarClass(progress[record.run_accession].status)}`}
+                                  style={{ width: `${progress[record.run_accession].percent}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="status-badge" style={{ opacity: 0.5 }}>{isIncluded ? 'Pending' : 'Excluded'}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+                <path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"></path>
+                <polygon points="18 2 22 6 12 16 8 16 8 12 18 2"></polygon>
+              </svg>
+              <p>No metadata records loaded.</p>
+              <p style={{ fontSize: '0.8rem' }}>Enter an accession or select a TSV file and click "Check Records".</p>
+            </div>
+          )
         )}
       </div>
     </div>

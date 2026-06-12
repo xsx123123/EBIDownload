@@ -490,6 +490,15 @@ async fn download_prefetch(
         message: "Starting Prefetch download...".to_string(),
     })?;
 
+    // Show indeterminate progress for each run while Prefetch works in batch mode.
+    for record in &processed {
+        app_handle.emit("download-event", DownloadEvent::Progress {
+            run_id: record.run_accession.clone(),
+            percent: 0.0,
+            status: "Downloading".to_string(),
+        })?;
+    }
+
     crate::prefetch::download_all(
         &processed,
         &config,
@@ -499,6 +508,14 @@ async fn download_prefetch(
         &options.prefetch_max_size,
         options.cleanup_sra,
     ).await?;
+
+    for record in &processed {
+        app_handle.emit("download-event", DownloadEvent::Progress {
+            run_id: record.run_accession.clone(),
+            percent: 100.0,
+            status: "Completed".to_string(),
+        })?;
+    }
 
     app_handle.emit("download-event", DownloadEvent::Completed)?;
     Ok(())
@@ -520,6 +537,15 @@ async fn download_ftp(
         message: format!("Starting {} download...", protocol_name),
     })?;
 
+    // Show indeterminate progress for each run while FTP/Aspera works in batch mode.
+    for record in &processed {
+        app_handle.emit("download-event", DownloadEvent::Progress {
+            run_id: record.run_accession.clone(),
+            percent: 0.0,
+            status: "Downloading".to_string(),
+        })?;
+    }
+
     crate::ftp::process_downloads(
         &processed,
         &config,
@@ -527,6 +553,14 @@ async fn download_ftp(
         protocol,
         options.multithreads,
     ).await?;
+
+    for record in &processed {
+        app_handle.emit("download-event", DownloadEvent::Progress {
+            run_id: record.run_accession.clone(),
+            percent: 100.0,
+            status: "Completed".to_string(),
+        })?;
+    }
 
     app_handle.emit("download-event", DownloadEvent::Completed)?;
     Ok(())
