@@ -15,12 +15,30 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 use tracing::{info, warn, error};
 
+/// Progress status for a single file upload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UploadProgressStatus {
+    Started,
+    Completed,
+    Failed,
+}
+
+/// Progress event emitted during S3 upload for a single file.
+#[derive(Debug, Clone)]
+pub struct UploadProgressEvent {
+    pub filename: String,
+    pub status: UploadProgressStatus,
+    pub percent: f64,
+}
+
+/// Optional progress callback for upload operations.
+pub type UploadProgressCallback = Arc<dyn Fn(UploadProgressEvent) + Send + Sync>;
+
 // NCBI SRA Submission Portal IAM User ARN
 const NCBI_SRA_IAM_ARN: &str = "arn:aws:iam::228184908524:user/SA-SubmissionPortal-S3";
 
-/// Upload command arguments (defined in main.rs, used here via reference)
-
 /// Execute the upload command
+#[allow(clippy::too_many_arguments)]
 pub async fn run_upload(
     bucket: &str,
     prefix: &Option<String>,
@@ -30,6 +48,7 @@ pub async fn run_upload(
     apply_policy: bool,
     metadata_template: &Option<PathBuf>,
     dry_run: bool,
+    progress_cb: Option<UploadProgressCallback>,
 ) -> Result<()> {
     info!("📤 Starting S3 upload workflow...");
     info!("   Bucket: {}", bucket);
@@ -95,7 +114,7 @@ pub async fn run_upload(
     }
 
     // 4. Upload files
-    upload_files(&client, bucket, prefix, &file_list, concurrent).await?;
+    upload_files(&client, bucket, prefix, &file_list, concurrent, progress_cb).await?;
 
     // 5. Apply bucket policy if requested
     if apply_policy {
@@ -161,6 +180,7 @@ async fn upload_files(
     prefix: &Option<String>,
     files: &[(PathBuf, u64)],
     concurrent: usize,
+    progress_cb: Option<UploadProgressCallback>,
 ) -> Result<()> {
     info!("📤 Uploading {} files to S3...", files.len());
 
@@ -182,6 +202,7 @@ async fn upload_files(
         let prefix = prefix.clone();
         let path = path.clone();
         let size = *size;
+        let progress_cb = progress_cb.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -192,6 +213,14 @@ async fn upload_files(
                 .to_string_lossy()
                 .to_string();
 
+            if let Some(cb) = &progress_cb {
+                cb(UploadProgressEvent {
+                    filename: filename.clone(),
+                    status: UploadProgressStatus::Started,
+                    percent: 0.0,
+                });
+            }
+
             let key = match &prefix {
                 Some(p) => format!("{}/{}", p.trim_end_matches('/'), filename),
                 None => filename.clone(),
@@ -200,10 +229,24 @@ async fn upload_files(
             match upload_single_file(&client, &bucket, &key, &path, size, &mp).await {
                 Ok(_) => {
                     success_count.fetch_add(1, Ordering::Relaxed);
+                    if let Some(cb) = &progress_cb {
+                        cb(UploadProgressEvent {
+                            filename: filename.clone(),
+                            status: UploadProgressStatus::Completed,
+                            percent: 100.0,
+                        });
+                    }
                 }
                 Err(e) => {
                     error!("❌ Failed to upload {}: {}", filename, e);
                     fail_count.fetch_add(1, Ordering::Relaxed);
+                    if let Some(cb) = &progress_cb {
+                        cb(UploadProgressEvent {
+                            filename: filename.clone(),
+                            status: UploadProgressStatus::Failed,
+                            percent: 0.0,
+                        });
+                    }
                 }
             }
         });

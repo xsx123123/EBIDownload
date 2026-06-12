@@ -1,7 +1,7 @@
 //! Tauri commands and event system for the GUI application
 
 use crate::*;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::path::PathBuf;
@@ -273,7 +273,6 @@ async fn download_aws(
     let chunk_size_mb = options.chunk_size;
     let output_dir = options.output;
     let fasterq_dump = config.software.fasterq_dump.display().to_string();
-    let pigz = "pigz";
     let cleanup_sra = options.cleanup_sra;
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(file_concurrency));
@@ -287,8 +286,6 @@ async fn download_aws(
         let max_workers = chunk_concurrency;
         let chunk_size = chunk_size_mb;
         let fasterq_dump = fasterq_dump.clone();
-        let pigz = pigz.to_string();
-        let cleanup_sra = cleanup_sra;
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -361,24 +358,25 @@ async fn download_aws(
                 }
             }
 
-            // pigz
-            let cmd_compress = format!("{} -p {} {}*.fastq", pigz, process_threads, run_id);
+            // Compress
             let fq_exists_after = (fq_1.exists() && fq_1.metadata()?.len() > 0)
                 || (fq_single.exists() && fq_single.metadata()?.len() > 0);
 
             if fq_exists_after {
-                let output = tokio::process::Command::new("bash")
-                    .arg("-c")
-                    .arg(&cmd_compress)
-                    .current_dir(&output_dir)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::piped())
-                    .output()
-                    .await?;
+                app_handle.emit("download-event", DownloadEvent::Progress {
+                    run_id: run_id.clone(),
+                    percent: 75.0,
+                    status: "Compressing".to_string(),
+                })?;
 
-                if !output.status.success() {
-                    return Err(anyhow::anyhow!("pigz failed for {}", run_id));
-                }
+                let output_dir_compress = output_dir.clone();
+                let run_id_compress = run_id.clone();
+                tokio::task::spawn_blocking(move || {
+                    crate::compress_fastq_files(&output_dir_compress, &run_id_compress, process_threads)
+                })
+                .await
+                .context("Compression task panicked")?
+                .context("Compression failed")?;
 
                 if cleanup_sra {
                     let sra_path = output_dir.join(&sra_filename);
@@ -517,33 +515,31 @@ async fn run_upload_async(
         return Ok(());
     }
 
-    // For now, simulate progress
-    for (i, file) in options.files.iter().enumerate() {
-        let filename = file
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| format!("file_{}", i));
+    let app_handle_cb = app_handle.clone();
+    let progress_cb: crate::upload::UploadProgressCallback = Arc::new(move |event| {
+        let status = match event.status {
+            crate::upload::UploadProgressStatus::Started => "Uploading",
+            crate::upload::UploadProgressStatus::Completed => "Completed",
+            crate::upload::UploadProgressStatus::Failed => "Failed",
+        };
+        let _ = app_handle_cb.emit("upload-event", UploadEvent::Progress {
+            filename: event.filename,
+            percent: event.percent,
+            status: status.to_string(),
+        });
+    });
 
-        app_handle.emit(
-            "upload-event",
-            UploadEvent::Progress {
-                filename: filename.clone(),
-                percent: 0.0,
-                status: "Uploading".to_string(),
-            },
-        )?;
-
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-        app_handle.emit(
-            "upload-event",
-            UploadEvent::Progress {
-                filename,
-                percent: 100.0,
-                status: "Completed".to_string(),
-            },
-        )?;
-    }
+    crate::upload::run_upload(
+        &options.bucket,
+        &options.prefix,
+        &options.files,
+        &options.region,
+        options.concurrent,
+        options.apply_policy,
+        &options.metadata_template,
+        options.dry_run,
+        Some(progress_cb),
+    ).await?;
 
     app_handle.emit("upload-event", UploadEvent::Completed)?;
     Ok(())
@@ -560,5 +556,67 @@ pub async fn cancel_download_command(state: State<'_, AppState>) -> Result<(), S
 pub async fn cancel_upload_command(state: State<'_, AppState>) -> Result<(), String> {
     let mut is_uploading = state.is_uploading.lock().unwrap();
     *is_uploading = false;
+    Ok(())
+}
+
+// ============================================================
+// Dependency Management Commands
+// ============================================================
+
+#[::tauri::command]
+pub async fn check_deps_command(state: State<'_, AppState>) -> Result<crate::deps::DepStatus, String> {
+    let config = state.config.lock().unwrap().clone();
+    Ok(crate::deps::check_sra_tools(config.as_ref()))
+}
+
+#[::tauri::command]
+pub async fn install_deps_command(
+    state: State<'_, AppState>,
+    app_handle: ::tauri::AppHandle,
+) -> Result<(), String> {
+    let config_path = state.config_path.lock().unwrap().clone();
+    let app_handle_cb = app_handle.clone();
+
+    let progress_cb: crate::deps::DepProgressCallback = Arc::new(move |event| {
+        let (level, message) = match event {
+            crate::deps::DepProgressEvent::DownloadStarted { url, size } => {
+                let size_str = size.map(|s| format!("{} bytes", s)).unwrap_or_else(|| "unknown".to_string());
+                ("info".to_string(), format!("Downloading sra-tools from {} ({})", url, size_str))
+            }
+            crate::deps::DepProgressEvent::DownloadProgress { downloaded, total } => {
+                let percent = total.map(|t| (downloaded as f64 / t as f64) * 100.0).unwrap_or(0.0);
+                ("info".to_string(), format!("Download progress: {:.1}%", percent))
+            }
+            crate::deps::DepProgressEvent::DownloadCompleted => {
+                ("info".to_string(), "Download completed".to_string())
+            }
+            crate::deps::DepProgressEvent::Verifying => {
+                ("info".to_string(), "Verifying checksum...".to_string())
+            }
+            crate::deps::DepProgressEvent::Extracting => {
+                ("info".to_string(), "Extracting sra-tools...".to_string())
+            }
+            crate::deps::DepProgressEvent::Completed => {
+                ("info".to_string(), "sra-tools installation completed".to_string())
+            }
+            crate::deps::DepProgressEvent::Error { message } => {
+                ("error".to_string(), format!("Installation error: {}", message))
+            }
+        };
+        let _ = app_handle_cb.emit("app-log", crate::logger::LogEntry { level, message });
+    });
+
+    let paths = crate::deps::install_sra_tools(None, None, Some(progress_cb))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    crate::deps::write_software_paths_to_yaml(&config_path, &paths)
+        .map_err(|e| e.to_string())?;
+
+    // Reload config into state
+    let new_config = load_config(&config_path).map_err(|e| e.to_string())?;
+    *state.config.lock().unwrap() = Some(new_config);
+
+    app_handle.emit("deps-installed", ()).map_err(|e| e.to_string())?;
     Ok(())
 }

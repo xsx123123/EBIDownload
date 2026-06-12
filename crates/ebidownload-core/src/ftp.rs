@@ -36,9 +36,13 @@ pub async fn process_downloads(
     let ascp_bin = config.software.ascp.as_ref()
         .ok_or_else(|| anyhow!("ascp path not configured"))?
         .display().to_string();
-    let ssh_key = config.setting.openssh.as_ref()
+    let ssh_key = config
+        .setting
+        .as_ref()
+        .and_then(|s| s.openssh.as_ref())
         .ok_or_else(|| anyhow!("Aspera openssh key not configured"))?
-        .display().to_string();
+        .display()
+        .to_string();
 
     struct Task {
         url: String,

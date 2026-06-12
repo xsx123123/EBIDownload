@@ -28,6 +28,25 @@ interface UploadEvent {
   data: any;
 }
 
+interface LogEntry {
+  level: string;
+  message: string;
+}
+
+interface DepStatusReady {
+  status: 'Ready';
+  prefetch: string;
+  fasterq_dump: string;
+  source: string;
+}
+
+interface DepStatusMissing {
+  status: 'Missing';
+  reason: string;
+}
+
+type DepStatus = DepStatusReady | DepStatusMissing;
+
 function App() {
   const [activeTab, setActiveTab] = useState<'download' | 'upload' | 'settings'>('download');
   const [_config, setConfig] = useState<Config | null>(null);
@@ -37,6 +56,9 @@ function App() {
   const [downloadProgress, setDownloadProgress] = useState<Record<string, { percent: number; status: string }>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, { percent: number; status: string }>>({});
   const [logs, setLogs] = useState<{ level: string; message: string; time: string }[]>([]);
+  const [depStatus, setDepStatus] = useState<'checking' | 'ready' | 'missing'>('checking');
+  const [depInfo, setDepInfo] = useState<DepStatus | null>(null);
+  const [isInstallingDeps, setIsInstallingDeps] = useState(false);
 
   // Download form state
   const [downloadForm, setDownloadForm] = useState({
@@ -74,9 +96,13 @@ function App() {
     fasterqDumpPath: '',
   });
 
-  // Load config on startup
+  // Load config and check dependencies on startup
   useEffect(() => {
-    loadConfig();
+    const initialize = async () => {
+      await loadConfig();
+      await checkDeps();
+    };
+    initialize();
   }, []);
 
   // Setup event listeners
@@ -89,11 +115,52 @@ function App() {
       handleUploadEvent(event.payload);
     });
 
+    const unlistenLog = listen<LogEntry>('app-log', (event) => {
+      addLog(event.payload.level, event.payload.message);
+    });
+
+    const unlistenDepsInstalled = listen('deps-installed', () => {
+      addLog('info', 'Dependencies installed');
+      setIsInstallingDeps(false);
+      checkDeps();
+    });
+
     return () => {
       unlistenDownload.then(f => f());
       unlistenUpload.then(f => f());
+      unlistenLog.then(f => f());
+      unlistenDepsInstalled.then(f => f());
     };
   }, []);
+
+  const checkDeps = async () => {
+    try {
+      const status = await invoke<DepStatus>('check_deps_command');
+      setDepInfo(status);
+      if (status.status === 'Ready') {
+        setDepStatus('ready');
+        addLog('info', `sra-tools ready (${status.source}): prefetch=${status.prefetch}, fasterq-dump=${status.fasterq_dump}`);
+      } else {
+        setDepStatus('missing');
+        addLog('warn', `sra-tools missing: ${status.reason}`);
+      }
+    } catch (e) {
+      setDepStatus('missing');
+      addLog('error', `Failed to check dependencies: ${e}`);
+    }
+  };
+
+  const handleInstallDeps = async () => {
+    if (isInstallingDeps) return;
+    setIsInstallingDeps(true);
+    addLog('info', 'Installing sra-tools...');
+    try {
+      await invoke('install_deps_command');
+    } catch (e) {
+      addLog('error', `Failed to install sra-tools: ${e}`);
+      setIsInstallingDeps(false);
+    }
+  };
 
   const loadConfig = async () => {
     try {
@@ -287,6 +354,27 @@ function App() {
 
   return (
     <div className="container">
+      {depStatus === 'missing' && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <h2>Missing Dependency: sra-tools</h2>
+            <p>
+              EBIDownload needs NCBI sra-tools (<code>prefetch</code> & <code>fasterq-dump</code>) to download SRA data.
+            </p>
+            {depInfo?.status === 'Missing' && (
+              <p className="modal-reason">{depInfo.reason}</p>
+            )}
+            <button
+              className="btn-primary"
+              onClick={handleInstallDeps}
+              disabled={isInstallingDeps}
+            >
+              {isInstallingDeps ? 'Installing...' : 'Install sra-tools automatically'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="header">
         <h1>EBIDownload</h1>
         <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Automated Bioinformatics Data Retrieval</p>

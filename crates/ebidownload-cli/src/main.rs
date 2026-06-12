@@ -2,10 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Local;
 use clap::Parser;
 use clap::Subcommand;
-use indicatif::{MultiProgress, HumanBytes};
-use csv::{ReaderBuilder, WriterBuilder};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle, HumanBytes};
+use csv::WriterBuilder;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use ebidownload_core::*;
 
-const VERSION: &str = "1.3.7";
+const VERSION: &str = "1.4.0";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 use clap::builder::styling::{AnsiColor, Effects, Styles};
@@ -80,6 +80,8 @@ enum Commands {
     Download(DownloadArgs),
     /// Upload sequencing data to AWS S3 for NCBI SRA submission
     Upload(UploadArgs),
+    /// Manage external dependencies (sra-tools)
+    Deps(DepsArgs),
 }
 
 // ============================================================
@@ -150,6 +152,38 @@ struct UploadArgs {
 
     #[arg(long, default_value = "false", help = "Show what would be uploaded without actually uploading", help_heading = "Advanced Options")]
     dry_run: bool,
+}
+
+// ============================================================
+// Deps Subcommand Arguments
+// ============================================================
+
+#[derive(Parser, Debug)]
+struct DepsArgs {
+    #[command(subcommand)]
+    command: DepsSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum DepsSubcommand {
+    /// Install sra-tools (prefetch + fasterq-dump)
+    Install {
+        #[arg(short, long, help = "sra-tools version to install", help_heading = "Install Options")]
+        version: Option<String>,
+        #[arg(short, long, value_name = "URL", help = "Custom download URL for the sra-tools tarball", help_heading = "Install Options")]
+        url: Option<String>,
+        #[arg(short, long, value_name = "FILE", help = "Path to EBIDownload.yaml to update", help_heading = "Install Options")]
+        yaml: Option<PathBuf>,
+    },
+    /// Check whether sra-tools are available
+    Check,
+    /// List installed managed dependency versions
+    List,
+    /// Remove a managed sra-tools installation
+    Remove {
+        #[arg(short, long, help = "Version to remove")]
+        version: Option<String>,
+    },
 }
 
 // ============================================================
@@ -249,7 +283,7 @@ async fn main() -> ExitCode {
 
     let output_dir = match &cli.command {
         Commands::Download(args) => args.output.clone(),
-        Commands::Upload(_) => PathBuf::from("."),
+        Commands::Upload(_) | Commands::Deps(_) => PathBuf::from("."),
     };
 
     if let Commands::Download(args) = &cli.command {
@@ -263,7 +297,7 @@ async fn main() -> ExitCode {
 
     if let Err(e) = setup_logging(&output_dir, &cli.log_level, &cli.log_format, match &cli.command {
         Commands::Download(args) => args.accession.as_deref(),
-        Commands::Upload(_) => None,
+        Commands::Upload(_) | Commands::Deps(_) => None,
     }) {
         eprintln!("❌ Failed to setup logging: {}", e);
         return ExitCode::FAILURE;
@@ -274,11 +308,13 @@ async fn main() -> ExitCode {
     let result: Result<()> = async {
         match &cli.command {
             Commands::Download(args) => {
-                ebidownload_core::check_pigz_dependency().context("pigz dependency check failed")?;
                 run_download(args, &cli).await
             }
             Commands::Upload(args) => {
                 run_upload(args).await
+            }
+            Commands::Deps(args) => {
+                run_deps(args, &cli).await
             }
         }
     }
@@ -393,8 +429,107 @@ async fn run_upload(args: &UploadArgs) -> Result<()> {
         args.apply_policy,
         &args.metadata_template,
         args.dry_run,
+        None,
     )
     .await
+}
+
+// ============================================================
+// Deps Command Entry Point
+// ============================================================
+
+async fn run_deps(args: &DepsArgs, cli: &Cli) -> Result<()> {
+    use ebidownload_core::deps::*;
+
+    match &args.command {
+        DepsSubcommand::Install { version, url, yaml } => {
+            let pb = ProgressBar::new(0);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {percent}%) {msg}")
+                    .unwrap()
+                    .progress_chars("#>-"),
+            );
+            let pb_for_cb = pb.clone();
+            let progress_cb: DepProgressCallback = Arc::new(move |event| match event {
+                DepProgressEvent::DownloadStarted { url, size } => {
+                    pb_for_cb.set_message(format!("downloading {}", url));
+                    if let Some(s) = size {
+                        pb_for_cb.set_length(s);
+                    }
+                }
+                DepProgressEvent::DownloadProgress { downloaded, total } => {
+                    pb_for_cb.set_position(downloaded);
+                    if let Some(t) = total {
+                        pb_for_cb.set_length(t);
+                    }
+                }
+                DepProgressEvent::DownloadCompleted => {
+                    pb_for_cb.set_message("download complete, verifying...");
+                }
+                DepProgressEvent::Verifying => {
+                    pb_for_cb.set_message("verifying checksum...");
+                }
+                DepProgressEvent::Extracting => {
+                    pb_for_cb.set_message("extracting sra-tools...");
+                }
+                DepProgressEvent::Completed => {
+                    pb_for_cb.finish_with_message("sra-tools installed");
+                }
+                DepProgressEvent::Error { message } => {
+                    pb_for_cb.abandon_with_message(format!("error: {}", message));
+                }
+            });
+
+            let paths = install_sra_tools(version.as_deref(), url.as_deref(), Some(progress_cb)).await?;
+            pb.finish_with_message("sra-tools installed");
+
+            let yaml_path = yaml.clone().unwrap_or_else(|| cli.yaml.clone());
+            write_software_paths_to_yaml(&yaml_path, &paths)?;
+
+            let abs_yaml = std::fs::canonicalize(&yaml_path).unwrap_or_else(|_| yaml_path.clone());
+            info!("✅ sra-tools installed and configured in {}", abs_yaml.display());
+        }
+        DepsSubcommand::Check => {
+            let config = if cli.yaml.exists() {
+                Some(load_config(&cli.yaml)?)
+            } else {
+                None
+            };
+            match check_sra_tools(config.as_ref()) {
+                DepStatus::Ready {
+                    prefetch,
+                    fasterq_dump,
+                    source,
+                } => {
+                    info!("✅ sra-tools ready (source: {})", source);
+                    info!("   prefetch: {}", prefetch.display());
+                    info!("   fasterq-dump: {}", fasterq_dump.display());
+                }
+                DepStatus::Missing { reason } => {
+                    warn!("⚠️  {}", reason);
+                    return Err(anyhow::anyhow!("{}", reason));
+                }
+            }
+        }
+        DepsSubcommand::List => {
+            let versions = list_installed();
+            if versions.is_empty() {
+                info!("No managed sra-tools versions installed.");
+            } else {
+                info!("Installed managed sra-tools versions:");
+                for v in versions {
+                    info!("   - {}", v);
+                }
+            }
+        }
+        DepsSubcommand::Remove { version } => {
+            let version = version.as_deref().unwrap_or(DEFAULT_SRA_TOOLS_VERSION);
+            remove_sra_tools(version)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn print_banner() {
@@ -575,13 +710,6 @@ pub fn create_script(output_path: &Path, fastq_id: &str, command: &str) -> Resul
     Ok(script_path)
 }
 
-// Helper: Execute Shell command with error echo
-async fn run_command(cmd: &str, dir: &Path) -> Result<()> {
-    info!("   Step: {}", cmd);
-    let output = Command::new("bash").arg("-c").arg(cmd).current_dir(dir).stdout(Stdio::null()).stderr(Stdio::piped()).output().await?;
-    if output.status.success() { Ok(()) } else { let stderr = String::from_utf8_lossy(&output.stderr); error!("❌ Command failed: {}\nError Output:\n{}", cmd, stderr); Err(anyhow::anyhow!("Command failed")) }
-}
-
 // Prefetch Entry
 async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs) -> Result<()> {
     ebidownload_core::prefetch::download_all(records, config, &args.output, args.multithreads, args.aws_threads, &args.prefetch_max_size, args.cleanup_sra).await
@@ -604,7 +732,6 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
     let mut handles = Vec::new();
 
     let fasterq_dump_path = config.software.fasterq_dump.display().to_string();
-    let pigz_path = "pigz";
 
     for record in records {
         let run_id = record.run_accession.clone();
@@ -614,7 +741,6 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
         let max_workers = chunk_concurrency;
         let chunk_size = chunk_size_mb;
         let fasterq_dump = fasterq_dump_path.clone();
-        let pigz = pigz_path.to_string();
         let cleanup_sra = args.cleanup_sra;
 
         let handle = tokio::spawn(async move {
@@ -642,8 +768,6 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                 warn!("❌ [{}] No AWS S3 URI found", run_id);
                 return Err(anyhow::anyhow!("No S3 URI for {}", run_id));
             }
-
-            let cmd_compress = format!("{} -p {} {}*.fastq", pigz, process_threads, run_id);
 
             // Smart check: If FASTQ file exists and is not empty, skip conversion
             let fq_1 = output_dir.join(format!("{}_1.fastq", run_id));
@@ -679,12 +803,15 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
             if (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) ||
                (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false)) {
 
-                info!(target: "download_detail", "📦 [{}] Step 3: Compressing (pigz)...", run_id);
-                // Pigz with wildcard still needs shell or glob expansion.
-                // Using bash -c here is acceptable for wildcard, but we can make it slightly safer by avoiding string formatting if possible.
-                // However, pigz *.fastq is inherently shell-dependent unless we expand in Rust.
-                // For simplicity/robustness, we keep the run_command (shell) for pigz as it is complex to reimplement globbing.
-                run_command(&cmd_compress, &output_dir).await.context("pigz failed")?;
+                info!(target: "download_detail", "📦 [{}] Step 3: Compressing...", run_id);
+                let output_dir_compress = output_dir.clone();
+                let run_id_compress = run_id.clone();
+                tokio::task::spawn_blocking(move || {
+                    ebidownload_core::compress_fastq_files(&output_dir_compress, &run_id_compress, process_threads)
+                })
+                .await
+                .context("Compression task panicked")?
+                .context("Compression failed")?;
 
                 if cleanup_sra {
                     let sra_path = output_dir.join(&sra_filename);

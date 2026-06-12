@@ -33,27 +33,29 @@
 ## 🔥 高优先级
 
 
+## ✅ 已完成（记录备忘）
+
+### ~~pigz 替换为 Rust 原生并行压缩~~
+
+**实现**：引入 `gzp` crate（默认 `deflate_default` + `libdeflate` 后端），新增 `ebidownload_core::compress_fastq_files()`；替换 `prefetch.rs`、GUI AWS 路径、CLI AWS/Prefetch 路径中的外部 `pigz` 调用；移除 `which` 与 `check_pigz_dependency()`。
+
+### ~~上传功能真正打通~~
+
+**实现**：`core::upload::run_upload()` 增加可选进度回调参数 `UploadProgressCallback`；GUI `run_upload_async()` 调用真实上传函数并通过 `upload-event` 向前端推送每文件进度；CLI 调用传入 `None` 保持原行为。
+
+### ~~日志输出到前端~~
+
+**实现**：GUI Tauri 侧新增自定义 `tracing_subscriber::Layer`（`logger.rs`），通过 channel 将 `tracing::info!/warn!/error!` 日志统一 emit 到 `app-log` 事件；前端 `App.tsx` 监听该事件并追加到日志面板。
+
+### ~~自动检测并安装外部依赖~~
+
+**实现**：`ebidownload-core` 新增 `deps` 模块，支持检测当前平台、从 NCBI 官方源下载 `sra-tools` 预编译包、MD5 校验、解压、安装到托管目录并写入 `EBIDownload.yaml`；CLI 新增 `deps` 子命令（`install/check/list/remove`）；GUI 启动时自动调用 `check_deps_command`，缺失时弹出模态框一键安装，安装完成后自动刷新配置。
+
+---
+
 ## 📌 中优先级
 
-### 3. pigz 替换为 Rust 原生并行压缩
-
-**背景**：当前依赖外部 `pigz` 命令，增加用户安装负担。
-
-**方案**：评估 `gzp` crate（libdeflater 后端）替代 pigz，消除外部依赖。
-
----
-
-### 4. 上传功能真正打通
-
-**问题**：`run_upload_async()` 当前还是 sleep 模拟，没有调用真实的 `core::upload::run_upload()`。
-
----
-
-### 5. 日志输出到前端
-
-**问题**：下载函数内部用 `tracing::info!()` 打印日志，前端日志面板看不到这些输出。
-
-**方案**：配置 tracing subscriber 把日志也 emit 到前端，或在前端轮询日志文件。
+当前暂无。
 
 ---
 
@@ -74,10 +76,9 @@
 - 支持中英文切换
 - 使用 react-i18next 实现
 
-### 9. 自动检测外部依赖
+### 9. ~~自动检测外部依赖~~
 
-- 启动时自动检测系统是否安装了 pigz / sra-tools
-- 未安装时弹出引导安装提示
+**已完成**。`ebidownload-core` 新增 `deps` 模块：自动检测平台、下载 NCBI 官方 `sra-tools` 预编译包、MD5 校验、解压并写入 `EBIDownload.yaml`；CLI 新增 `deps` 子命令（`install/check/list/remove`）；GUI 启动时自动调用 `check_deps_command`，缺失时弹出模态框一键安装。
 
 ### 10. 主题切换
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0] - 2026-06-12
+
+### Added
+- **Automatic Dependency Management**: New `deps` subcommand to download, verify, and install NCBI `sra-tools` automatically:
+  - `EBIDownload deps install` downloads the correct pre-built release for the current platform
+  - `EBIDownload deps check` verifies that `prefetch` / `fasterq-dump` are available
+  - `EBIDownload deps list` shows managed installations
+  - `EBIDownload deps remove` removes a managed installation
+- **GUI Dependency Auto-Detection**: The GUI now checks for `sra-tools` on startup and offers a one-click install dialog if it is missing.
+- **CLI Install Progress Bar**: `deps install` now shows a real-time progress bar for download, checksum verification, and extraction.
+
+### Changed
+- **Version Bump**: Bumped version to `1.4.0` across all crates, the GUI package, and documentation.
+- **YAML Path Logging**: `deps install` now reports the absolute path of the updated `EBIDownload.yaml` file.
+
 ## [1.3.7] - 2026-06-05
 
 ### Added

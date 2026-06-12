@@ -1,21 +1,26 @@
 //! EBIDownload library
 
 pub mod aws_s3;
+pub mod deps;
 pub mod ftp;
 pub mod prefetch;
 pub mod progress;
 pub mod upload;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use gzp::{deflate::Gzip, ZBuilder};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use tracing::info;
 
 // Configuration
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub software: SoftwarePaths,
-    pub setting: SettingPaths,
+    pub setting: Option<SettingPaths>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -346,13 +351,63 @@ pub fn process_records(
     Ok(processed)
 }
 
+/// Compress all FASTQ files for a given run_id in output_dir using native parallel gzip.
+/// Returns the list of created .fastq.gz files. Deletes original .fastq files on success.
+pub fn compress_fastq_files(
+    output_dir: &Path,
+    run_id: &str,
+    threads: usize,
+) -> Result<Vec<PathBuf>> {
+    let mut compressed = Vec::new();
+    let candidates = [
+        format!("{}.fastq", run_id),
+        format!("{}_1.fastq", run_id),
+        format!("{}_2.fastq", run_id),
+    ];
+
+    for name in &candidates {
+        let input_path = output_dir.join(name);
+        if !input_path.exists() || input_path.metadata()?.len() == 0 {
+            continue;
+        }
+
+        let output_path = output_dir.join(format!("{}.gz", name));
+        info!("📦 Compressing {} -> {}", input_path.display(), output_path.display());
+
+        let input = File::open(&input_path)
+            .with_context(|| format!("Failed to open {}", input_path.display()))?;
+        let mut input = BufReader::new(input);
+        let output = File::create(&output_path)
+            .with_context(|| format!("Failed to create {}", output_path.display()))?;
+
+        let mut writer = ZBuilder::<Gzip, _>::new()
+            .num_threads(threads)
+            .from_writer(output);
+
+        std::io::copy(&mut input, &mut writer)
+            .with_context(|| format!("Failed to compress {}", input_path.display()))?;
+        writer
+            .finish()
+            .with_context(|| format!("Failed to finalize {}", output_path.display()))?;
+
+        std::fs::remove_file(&input_path)
+            .with_context(|| format!("Failed to remove original {}", input_path.display()))?;
+
+        compressed.push(output_path);
+    }
+
+    Ok(compressed)
+}
+
 pub fn validate_config(config: &Config, method: DownloadMethod) -> Result<()> {
-    check_pigz_dependency()?;
     match method {
         DownloadMethod::Ascp => {
             let ascp = config.software.ascp.as_ref()
                 .ok_or_else(|| anyhow!("ascp path not configured"))?;
-            let openssh = config.setting.openssh.as_ref()
+            let openssh = config
+                .setting
+                .as_ref()
+                .and_then(|s| s.openssh.as_ref())
                 .ok_or_else(|| anyhow!("Aspera openssh key not configured"))?;
             check_executable(ascp, "ascp")?;
             check_file_exists(openssh, "Aspera openssh key")?;
@@ -365,15 +420,6 @@ pub fn validate_config(config: &Config, method: DownloadMethod) -> Result<()> {
             check_executable(&config.software.fasterq_dump, "fasterq-dump")?;
         }
         _ => {}
-    }
-    Ok(())
-}
-
-pub fn check_pigz_dependency() -> Result<()> {
-    if which::which("pigz").is_err() {
-        return Err(anyhow::anyhow!(
-            "pigz not found in system PATH. Please install pigz first."
-        ));
     }
     Ok(())
 }
@@ -398,4 +444,45 @@ fn check_file_exists(path: &Path, name: &str) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_compress_fastq_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let run_id = "SRR000001";
+
+        let fq1 = tmp.path().join(format!("{}_1.fastq", run_id));
+        let fq2 = tmp.path().join(format!("{}_2.fastq", run_id));
+        let mut f1 = File::create(&fq1).unwrap();
+        writeln!(f1, "@read1/1").unwrap();
+        writeln!(f1, "ACGTACGT").unwrap();
+        writeln!(f1, "+").unwrap();
+        writeln!(f1, "!!!!!!!!").unwrap();
+        let mut f2 = File::create(&fq2).unwrap();
+        writeln!(f2, "@read1/2").unwrap();
+        writeln!(f2, "TGCATGCA").unwrap();
+        writeln!(f2, "+").unwrap();
+        writeln!(f2, "!!!!!!!!").unwrap();
+
+        let compressed = compress_fastq_files(tmp.path(), run_id, 2).unwrap();
+        assert_eq!(compressed.len(), 2);
+
+        assert!(tmp.path().join(format!("{}_1.fastq.gz", run_id)).exists());
+        assert!(tmp.path().join(format!("{}_2.fastq.gz", run_id)).exists());
+        assert!(!fq1.exists());
+        assert!(!fq2.exists());
+
+        // Verify gzip validity by decompressing the first file
+        let gz1 = File::open(&compressed[0]).unwrap();
+        let mut decoder = flate2::read::GzDecoder::new(gz1);
+        let mut contents = String::new();
+        std::io::Read::read_to_string(&mut decoder, &mut contents).unwrap();
+        assert!(contents.contains("@read1/1"));
+        assert!(contents.contains("ACGTACGT"));
+    }
 }

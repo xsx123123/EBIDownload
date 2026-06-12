@@ -7,28 +7,6 @@ use tokio::process::Command;
 use tokio::sync::Semaphore;
 use tracing::{info, warn, error};
 
-// Helper: Execute Shell command (with error echo)
-async fn run_command(cmd: &str, dir: &Path) -> Result<()> {
-    info!("   Step: {}", cmd);
-    // Note: This switches current directory to dir (i.e., output_dir)
-    let output = Command::new("bash")
-        .arg("-c")
-        .arg(cmd)
-        .current_dir(dir) 
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .await?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        error!("❌ Command failed: {}\nError Output:\n{}", cmd, stderr);
-        Err(anyhow::anyhow!("Command failed"))
-    }
-}
-
 pub async fn download_all(
     records: &[ProcessedRecord],
     config: &Config,
@@ -46,7 +24,6 @@ pub async fn download_all(
 
     let prefetch_bin = config.software.prefetch.display().to_string();
     let fasterq_dump_bin = config.software.fasterq_dump.display().to_string();
-    let pigz_bin = "pigz"; 
 
     for record in records {
         let run_id = record.run_accession.clone();
@@ -54,10 +31,8 @@ pub async fn download_all(
         let sem = semaphore.clone();
         let prefetch = prefetch_bin.clone();
         let fasterq_dump = fasterq_dump_bin.clone();
-        let pigz = pigz_bin.to_string();
         let threads = process_threads;
         let max_size_arg = max_size.to_string(); // Clone for thread
-        let cleanup_sra = cleanup_sra;
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -68,10 +43,6 @@ pub async fn download_all(
             let sra_file = sra_dir.join(format!("{}.sra", run_id));
             
             let relative_sra_path = format!("{}/{}.sra", run_id, run_id);
-            let cmd_compress_str = format!(
-                "{} -p {} {}*.fastq",
-                pigz, threads, run_id
-            );
 
             // --- Execution Flow ---
             
@@ -130,17 +101,23 @@ pub async fn download_all(
                 }
             }
 
-            // 3. Compress (Shell Command due to wildcard)
+            // 3. Compress
             if (fq_1.exists() && fq_1.metadata()?.len() > 0) || (fq_single.exists() && fq_single.metadata()?.len() > 0) {
-                info!("📦 [{}] Step 3: Compressing (pigz)...", run_id);
-                run_command(&cmd_compress_str, &output_dir).await.context("pigz failed")?;
-                
-                if cleanup_sra {
-                    if sra_file.exists() {
-                        info!("🧹 [{}] Cleaning up SRA file: {}", run_id, sra_file.display());
-                        if let Err(e) = tokio::fs::remove_file(&sra_file).await {
-                            warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
-                        }
+                info!("📦 [{}] Step 3: Compressing...", run_id);
+                let output_dir_compress = output_dir.clone();
+                let run_id_compress = run_id.clone();
+                let threads_compress = threads;
+                tokio::task::spawn_blocking(move || {
+                    crate::compress_fastq_files(&output_dir_compress, &run_id_compress, threads_compress)
+                })
+                .await
+                .context("Compression task panicked")?
+                .context("Compression failed")?;
+
+                if cleanup_sra && sra_file.exists() {
+                    info!("🧹 [{}] Cleaning up SRA file: {}", run_id, sra_file.display());
+                    if let Err(e) = tokio::fs::remove_file(&sra_file).await {
+                        warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
                     }
                 }
                 
