@@ -15,7 +15,9 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 - **CLI Install Progress Bar**: `EBIDownload deps install` now shows a real-time progress bar for the download, checksum verification, and extraction steps.
 - **Absolute YAML Path**: After installing dependencies, the success message now prints the absolute path of the updated `EBIDownload.yaml` file.
 
-![EBIDownload](./docs/Download.png)
+![EBIDownload GUI](./docs/GUI.png)
+
+*The EBIDownload desktop GUI: Download, Upload, Settings, and About tabs.*
 
 ## Features
 
@@ -252,6 +254,8 @@ setting:
 
 The GUI provides an intuitive interface for users who prefer visual operation over command-line tools.
 
+![EBIDownload GUI Tabs](./docs/GUI.png)
+
 ```bash
 cd crates/ebidownload-gui
 npm run tauri dev
@@ -263,7 +267,8 @@ npm run tauri dev
 |-----|----------|
 | **Download** | Enter Accession ID, select output directory, choose download method (AWS/Aspera/FTP/Prefetch/Auto), set parallel threads, and start downloading. Supports fetching metadata preview before download. |
 | **Upload** | Select files, enter S3 bucket name, configure upload settings, and submit to NCBI SRA via AWS S3. Shows real per-file upload progress and forwards core logs to the live log panel. |
-| **Settings** | Visually configure paths for `ascp`, `prefetch`, `fasterq-dump`, and Aspera OpenSSH key. |
+| **Settings** | Visually configure paths for `prefetch`, `fasterq-dump`, and other software executables. |
+| **About** | Software information, version, credits, and a reflection on the atoms that make us all. |
 
 **Features:**
 - Automatic dependency detection: checks for `sra-tools` on startup and offers one-click installation if missing
