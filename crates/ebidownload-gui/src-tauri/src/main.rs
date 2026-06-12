@@ -13,6 +13,8 @@ pub fn run() {
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             get_config_command,
+            get_config_path_command,
+            set_config_path_command,
             load_config_command,
             save_config_command,
             fetch_metadata_command,

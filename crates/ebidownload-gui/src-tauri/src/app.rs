@@ -4,7 +4,8 @@ use crate::*;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use ::tauri::{State, Emitter};
 
@@ -23,11 +24,53 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             config: Mutex::new(None),
-            config_path: Mutex::new(PathBuf::from("EBIDownload.yaml")),
+            config_path: Mutex::new(default_config_path()),
             is_downloading: Arc::new(Mutex::new(false)),
             is_uploading: Arc::new(Mutex::new(false)),
         }
     }
+}
+
+/// Returns the default user-specific config path.
+/// macOS/Linux: ~/.config/EBIDownload/EBIDownload.yaml
+/// Windows:     %APPDATA%\EBIDownload\EBIDownload.yaml
+fn default_config_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("EBIDownload")
+        .join("EBIDownload.yaml")
+}
+
+/// Ensure the parent directory of the given path exists.
+fn ensure_parent_dir(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create config directory: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Create a minimal default config file if it does not already exist.
+fn ensure_default_config(path: &Path) -> Result<(), String> {
+    ensure_parent_dir(path)?;
+    if !path.exists() {
+        let default = serde_yaml::to_string(&serde_json::json!({
+            "software": {
+                "ascp": "",
+                "prefetch": "",
+                "fasterq_dump": "",
+            },
+            "setting": {
+                "openssh": "",
+            }
+        }))
+        .map_err(|e| format!("Failed to serialize default config: {}", e))?;
+        fs::write(path, default)
+            .map_err(|e| format!("Failed to write default config: {}", e))?;
+    }
+    Ok(())
 }
 
 impl Default for AppState {
@@ -81,8 +124,13 @@ pub async fn load_config_command(
     state: State<'_, AppState>,
     path: Option<String>,
 ) -> Result<(), String> {
-    let config_path = path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("EBIDownload.yaml"));
+    let config_path = path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| state.config_path.lock().unwrap().clone());
     *state.config_path.lock().unwrap() = config_path.clone();
+
+    // If the requested config does not exist, create a default one.
+    ensure_default_config(&config_path)?;
 
     match load_config(&config_path) {
         Ok(config) => {
@@ -94,11 +142,30 @@ pub async fn load_config_command(
 }
 
 #[::tauri::command]
+pub async fn get_config_path_command(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(state.config_path.lock().unwrap().to_string_lossy().to_string())
+}
+
+#[::tauri::command]
+pub async fn set_config_path_command(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
+    let new_path = PathBuf::from(path);
+    ensure_default_config(&new_path)?;
+    *state.config_path.lock().unwrap() = new_path;
+    Ok(())
+}
+
+#[::tauri::command]
 pub async fn save_config_command(
     state: State<'_, AppState>,
     config: ConfigInput,
 ) -> Result<(), String> {
     let config_path = state.config_path.lock().unwrap().clone();
+
+    // Make sure the target directory exists before writing.
+    ensure_parent_dir(&config_path)?;
 
     let yaml_config = serde_yaml::to_string(&serde_json::json!({
         "software": {
@@ -112,7 +179,7 @@ pub async fn save_config_command(
     }))
     .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-    std::fs::write(&config_path, yaml_config)
+    fs::write(&config_path, yaml_config)
         .map_err(|e| format!("Failed to write config: {}", e))?;
 
     // Reload into state

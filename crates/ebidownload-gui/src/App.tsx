@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import './styles.css';
 
@@ -103,10 +103,12 @@ function App() {
     prefetchPath: '',
     fasterqDumpPath: '',
   });
+  const [configPath, setConfigPath] = useState('');
 
   // Load config and check dependencies on startup
   useEffect(() => {
     const initialize = async () => {
+      await loadConfigPath();
       await loadConfig();
       await checkDeps();
     };
@@ -183,6 +185,15 @@ function App() {
     }
   };
 
+  const loadConfigPath = async () => {
+    try {
+      const path = await invoke<string>('get_config_path_command');
+      setConfigPath(path);
+    } catch (e) {
+      addLog('warn', `Failed to get config path: ${e}`);
+    }
+  };
+
   const loadConfig = async () => {
     try {
       const result = await invoke<Config | null>('get_config_command');
@@ -195,6 +206,24 @@ function App() {
       }
     } catch (e) {
       addLog('warn', `Failed to load config: ${e}`);
+    }
+  };
+
+  const handleSelectConfigPath = async () => {
+    const selected = await save({
+      filters: [{ name: 'YAML', extensions: ['yaml', 'yml'] }],
+      defaultPath: 'EBIDownload.yaml',
+    });
+    if (selected) {
+      try {
+        await invoke('set_config_path_command', { path: selected });
+        setConfigPath(selected);
+        addLog('info', `Config path set to: ${selected}`);
+        await loadConfig();
+        await checkDeps();
+      } catch (e) {
+        addLog('error', `Failed to set config path: ${e}`);
+      }
     }
   };
 
@@ -544,6 +573,8 @@ function App() {
             setForm={setConfigForm}
             onSaveConfig={handleSaveConfig}
             selectFile={selectFile}
+            configPath={configPath}
+            onSelectConfigPath={handleSelectConfigPath}
           />
         )}
 
@@ -1122,6 +1153,8 @@ function SettingsTab({
   setForm,
   onSaveConfig,
   selectFile,
+  configPath,
+  onSelectConfigPath,
 }: any) {
   const createFileSelector = (field: string) => async () => {
     const selected = await selectFile(false);
@@ -1132,6 +1165,34 @@ function SettingsTab({
 
   return (
     <div className="settings-tab">
+      <div className="card">
+        <div className="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          Configuration File
+        </div>
+        <div className="form-group">
+          <label>Config File Path</label>
+          <div className="form-row">
+            <input
+              type="text"
+              value={configPath}
+              readOnly
+              placeholder="Path to EBIDownload.yaml"
+              style={{ flex: 1 }}
+            />
+            <button className="btn btn-secondary" onClick={onSelectConfigPath}>
+              Browse
+            </button>
+          </div>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+            Default location is your system config directory. Saving will create the file if it does not exist.
+          </p>
+        </div>
+      </div>
+
       <div className="card">
         <div className="card-title">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
