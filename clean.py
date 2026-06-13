@@ -8,9 +8,9 @@ from pathlib import Path
 
 
 def main() -> int:
-    # Resolve paths relative to this script's location (scripts/).
+    # The script lives at the project root, so use its directory directly.
     script_dir = Path(__file__).resolve().parent
-    project_root = script_dir.parent
+    project_root = script_dir
 
     print("🧹 Cleaning Rust workspace...")
     subprocess.run(["cargo", "clean"], cwd=project_root, check=True)

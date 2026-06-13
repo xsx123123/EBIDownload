@@ -11,6 +11,8 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 
 ## What's New in v1.4.0
 
+- **Light / Dark theme toggle**: A new theme button in the GUI header switches between dark and light modes. The choice is persisted across sessions (`localStorage`) and respects the system's `prefers-color-scheme` on first launch.
+- **GitHub link in About tab**: The About tab now includes a "View on GitHub" link that opens the project's [GitHub repository](https://github.com/xsx123123/EBIDownload) in your default browser.
 - **Default config moved to `~/.EBIDownload/EBIDownload.yaml`**: The GUI and CLI now look for `EBIDownload.yaml` under `~/.EBIDownload/` by default, and auto-load it on startup.
 - **Automatic Dependency Management**: EBIDownload can now automatically download, verify, and install NCBI `sra-tools` via the new `EBIDownload deps install` command. The GUI also checks for dependencies on startup and offers one-click installation if `sra-tools` is missing.
 - **GUI logs written to output directory**: While a download is running, logs are mirrored to `output/EBIDownload.log` for offline review, and `TRACE` noise is filtered to keep log files small.
@@ -37,6 +39,7 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 - **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
 - **Real-time Progress (GUI)**: Visual progress bars, per-run download speed, smooth overall progress, download queue management, and live log streaming in the desktop application.
 - **Pause / Stop Downloads (GUI)**: Pause and resume AWS downloads, or stop any in-progress download.
+- **Light / Dark Themes (GUI)**: One-click theme toggle in the header; choice is persisted across sessions and follows the system theme on first launch.
 - **Automatic Dependency Management**: One-click or CLI-driven installation of `sra-tools`; the GUI checks for dependencies on startup.
 - **Auto-Collapse UI During Download**: Configuration cards fold away and the progress panel expands automatically when a download starts.
 
@@ -165,7 +168,7 @@ setting:
 
 ```powershell
 # 1. Build (in PowerShell or CMD)
-cd crates\ebidownload-gui
+cd crates/ebidownload-gui
 npm install
 npm run tauri build
 
@@ -294,7 +297,9 @@ npm run tauri dev
 | **Download** | Enter Accession ID, select output directory, choose download method (AWS/Aspera/FTP/Prefetch/Auto), set parallel threads, and start downloading. Supports fetching metadata preview before download. |
 | **Upload** | Select files, enter S3 bucket name, configure upload settings, and submit to NCBI SRA via AWS S3. Shows real per-file upload progress and forwards core logs to the live log panel. |
 | **Settings** | Visually configure paths for `prefetch`, `fasterq-dump`, and other software executables. |
-| **About** | Software information, version, credits, and a reflection on the atoms that make us all. |
+| **About** | Software information, version, a "View on GitHub" link to the [project repository](https://github.com/xsx123123/EBIDownload), and a reflection on the atoms that make us all. |
+
+A circular **theme toggle button** in the top-right corner of the header switches between dark and light modes. Your preference is stored locally and restored on the next launch.
 
 **Features:**
 - Automatic dependency detection: checks for `sra-tools` on startup and offers one-click installation if missing
