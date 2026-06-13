@@ -11,9 +11,14 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 
 ## What's New in v1.4.0
 
+- **Default config moved to `~/.EBIDownload/EBIDownload.yaml`**: The GUI and CLI now look for `EBIDownload.yaml` under `~/.EBIDownload/` by default, and auto-load it on startup.
 - **Automatic Dependency Management**: EBIDownload can now automatically download, verify, and install NCBI `sra-tools` via the new `EBIDownload deps install` command. The GUI also checks for dependencies on startup and offers one-click installation if `sra-tools` is missing.
-- **CLI Install Progress Bar**: `EBIDownload deps install` now shows a real-time progress bar for the download, checksum verification, and extraction steps.
-- **Absolute YAML Path**: After installing dependencies, the success message now prints the absolute path of the updated `EBIDownload.yaml` file.
+- **GUI logs written to output directory**: While a download is running, logs are mirrored to `output/EBIDownload.log` for offline review, and `TRACE` noise is filtered to keep log files small.
+- **Pause / Stop downloads in GUI**: AWS downloads can now be paused and resumed; any in-progress download can be stopped.
+- **Real-time speed in Status column**: AWS downloads show live `MB/s` speed next to each run's progress bar.
+- **Smooth Overall Progress**: Overall progress is now computed from the average percentage across all runs instead of counting completed runs.
+- **Upload marked experimental**: Both CLI and GUI now warn that the upload subcommand is still under testing.
+- **Clean script rewritten in Python**: `clean.sh` has been replaced with `clean.py` for cross-platform cleanup.
 
 ![EBIDownload GUI](./docs/GUI.png)
 
@@ -30,8 +35,10 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 - **Resumable Downloads**: Supports resumable downloads in `aws`, `ascp` and `prefetch` modes, ensuring download continuity.
 - **Smart Auto-Fallback**: Automatically attempts AWS S3 first and seamlessly switches to Prefetch if the AWS download fails (Mode: `auto`).
 - **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
-- **Real-time Progress (GUI)**: Visual progress bars, download queue management, and live log streaming in the desktop application.
+- **Real-time Progress (GUI)**: Visual progress bars, per-run download speed, smooth overall progress, download queue management, and live log streaming in the desktop application.
+- **Pause / Stop Downloads (GUI)**: Pause and resume AWS downloads, or stop any in-progress download.
 - **Automatic Dependency Management**: One-click or CLI-driven installation of `sra-tools`; the GUI checks for dependencies on startup.
+- **Auto-Collapse UI During Download**: Configuration cards fold away and the progress panel expands automatically when a download starts.
 
 ---
 
@@ -190,7 +197,23 @@ npm run tauri build
 
 `sra-tools` will be installed automatically on first GUI launch if it is not found.
 
-### d. CI/CD Automatic Multi-Platform Build
+### d. Clean Build Artifacts
+
+To remove all build artifacts (Rust `target/`, `node_modules`, `dist`, etc.), run the provided Python script from the project root:
+
+```bash
+python3 clean.py
+```
+
+After cleaning, rebuild the GUI with:
+
+```bash
+cd crates/ebidownload-gui
+npm install
+npm run tauri dev
+```
+
+### e. CI/CD Automatic Multi-Platform Build
 
 To build for all three platforms automatically, use GitHub Actions. See [`.github/workflows/build.yml`](./.github/workflows/build.yml) for a ready-to-use workflow that produces `.dmg`, `.msi`, and `.AppImage` on every release.
 
@@ -223,7 +246,10 @@ jobs:
 
 ## 4. Configuration File
 
-This program uses a YAML file (defaulting to `EBIDownload.yaml`) to configure the paths for external tools, including the Aspera CLI (`ascp`) and `sra-tools` (`prefetch`, `fasterq-dump`).
+This program uses a YAML file to configure the paths for external tools, including the Aspera CLI (`ascp`) and `sra-tools` (`prefetch`, `fasterq-dump`).
+
+**Default location**: `~/.EBIDownload/EBIDownload.yaml`.  
+The file is created automatically on first launch if it does not exist, and it is reloaded on startup.
 
 `sra-tools` paths are optional: if they are not present in the YAML file, EBIDownload falls back to a managed installation (created by `EBIDownload deps install` or the GUI's startup install dialog) and finally to executables found in your `PATH`.
 
@@ -272,8 +298,12 @@ npm run tauri dev
 
 **Features:**
 - Automatic dependency detection: checks for `sra-tools` on startup and offers one-click installation if missing
-- Real-time download progress bars for each run
+- Real-time download progress bars for each run, with live `MB/s` speed in the Status column
+- Smooth Overall Progress based on the average completion across all runs
+- Pause / Stop controls for AWS downloads
 - Live log panel showing download/conversion/compression/upload status, including logs emitted from the Rust core
+- Logs mirrored to `output/EBIDownload.log` during each download run
+- Auto-collapse configuration cards and auto-expand progress panel when a download starts
 - Dry-run mode to preview what would be downloaded
 - Support for TSV file input (batch download)
 
@@ -388,6 +418,7 @@ After the script runs, the output directory will contain the following files and
 ```
 .
 ├── EBIDownload_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log
+├── EBIDownload.log                         (GUI per-run log, when using the GUI)
 ├── ena_metadata_{ACCESSION}.tsv
 ├── R1_fastq_md5_{ACCESSION}.tsv
 ├── R2_fastq_md5_{ACCESSION}.tsv
@@ -398,6 +429,9 @@ After the script runs, the output directory will contain the following files and
 
 - **Log File**: `EBIDownload_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log`
   - Records the detailed execution log of the script, with the Accession ID in the filename for easy identification.
+
+- **GUI Log File**: `EBIDownload.log`
+  - Created in the selected output directory when a GUI download starts. It mirrors the same logs shown in the live log panel and is overwritten on each new download.
 
 - **Metadata File**: `ena_metadata_{ACCESSION}.tsv`
   - Contains all fetched and filtered metadata from the EBI API, with a header comment indicating the source project.
@@ -411,6 +445,8 @@ After the script runs, the output directory will contain the following files and
 ---
 
 ## 7. Upload to NCBI SRA via AWS S3
+
+> **⚠️ Experimental**: The upload subcommand / GUI tab is still under testing. Please verify your uploads and use with caution.
 
 In addition to downloading, EBIDownload supports **uploading sequencing data to AWS S3** for fast NCBI SRA submission. This is useful when you need to submit large volumes of data (hundreds of GB to TB scale) and want to leverage AWS's enterprise-grade bandwidth for reliable, high-speed uploads.
 
