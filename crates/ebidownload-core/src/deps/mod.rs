@@ -192,7 +192,6 @@ fn find_sra_tools_in_dir(dir: &Path) -> Option<SoftwarePaths> {
     let prefetch = find_executable(dir, "prefetch")?;
     let fasterq_dump = find_executable(dir, "fasterq-dump")?;
     Some(SoftwarePaths {
-        ascp: None,
         prefetch,
         fasterq_dump,
     })
@@ -233,7 +232,6 @@ pub fn find_sra_tools_in_path() -> Option<SoftwarePaths> {
     let prefetch = which::which("prefetch").ok()?;
     let fasterq_dump = which::which("fasterq-dump").ok()?;
     Some(SoftwarePaths {
-        ascp: None,
         prefetch,
         fasterq_dump,
     })
@@ -504,20 +502,16 @@ pub fn write_software_paths_to_yaml(yaml_path: &Path, paths: &SoftwarePaths) -> 
         let content = std::fs::read_to_string(yaml_path)?;
         serde_yaml::from_str(&content).unwrap_or_else(|_| Config {
             software: SoftwarePaths {
-                ascp: None,
                 prefetch: paths.prefetch.clone(),
                 fasterq_dump: paths.fasterq_dump.clone(),
             },
-            setting: None,
         })
     } else {
         Config {
             software: SoftwarePaths {
-                ascp: None,
                 prefetch: paths.prefetch.clone(),
                 fasterq_dump: paths.fasterq_dump.clone(),
             },
-            setting: None,
         }
     };
 

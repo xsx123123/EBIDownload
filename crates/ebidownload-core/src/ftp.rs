@@ -14,35 +14,20 @@ use tracing::{info, warn, error};
 
 pub enum Protocol {
     Ftp,
-    Ascp,
 }
 
 pub async fn process_downloads(
     records: &[ProcessedRecord],
-    config: &Config,
+    _config: &Config,
     output_dir: &Path,
-    protocol: Protocol,
+    _protocol: Protocol,
     threads: usize,
 ) -> Result<()> {
-    info!("🚀 Starting {:?} download pipeline with {} threads...", 
-        match protocol { Protocol::Ftp => "FTP", Protocol::Ascp => "Aspera" }, 
-        threads
-    );
+    info!("🚀 Starting FTP download pipeline with {} threads...", threads);
 
     let semaphore = Arc::new(Semaphore::new(threads));
     let mp = Arc::new(MultiProgress::new());
     let mut handles = Vec::new();
-
-    let ascp_bin = config.software.ascp.as_ref()
-        .ok_or_else(|| anyhow!("ascp path not configured"))?
-        .display().to_string();
-    let ssh_key = config
-        .setting
-        .as_ref()
-        .and_then(|s| s.openssh.as_ref())
-        .ok_or_else(|| anyhow!("Aspera openssh key not configured"))?
-        .display()
-        .to_string();
 
     struct Task {
         url: String,
@@ -77,27 +62,12 @@ pub async fn process_downloads(
         let t_md5 = task.md5.clone();
         let t_file = task.filename.clone();
         let t_size = task.total_size; // 🟢
-        
-        let (cmd_bin, cmd_args, cmd_string_for_script) = match protocol {
-            Protocol::Ftp => {
-                ("wget".to_string(), vec!["-c".to_string(), t_url.clone()], format!("wget -c {}", t_url))
-            },
-            Protocol::Ascp => {
-                let ascp_url = t_url.replace("ftp.sra.ebi.ac.uk", "era-fasp@fasp.sra.ebi.ac.uk:");
-                (
-                    ascp_bin.clone(), 
-                    vec![
-                        "-QT".to_string(), "-k2".to_string(), 
-                        "-l".to_string(), "800m".to_string(), 
-                        "-P33001".to_string(), 
-                        "-i".to_string(), ssh_key.clone(), 
-                        ascp_url.clone(), 
-                        ".".to_string()
-                    ],
-                    format!("{} -QT -k2 -l 800m -P33001 -i {} {} .", ascp_bin, ssh_key, ascp_url)
-                )
-            }
-        };
+
+        let (cmd_bin, cmd_args, cmd_string_for_script) = (
+            "wget".to_string(),
+            vec!["-c".to_string(), t_url.clone()],
+            format!("wget -c {}", t_url),
+        );
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");

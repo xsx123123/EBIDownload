@@ -50,7 +50,7 @@ const HELP_STYLES: Styles = Styles::styled()
 #[command(
     author,
     version = VERSION,
-    about = "Download and upload sequencing data (EBI ENA / NCBI SRA)",
+    about = "Download and upload sequencing data (EBI ENA / NCBI GEO/SRA)",
     long_about = None,
     color = clap::ColorChoice::Always,
     styles = HELP_STYLES,
@@ -381,10 +381,6 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
     }
 
     match args.download {
-        DownloadMethod::Ascp => {
-            validate_config(&config, DownloadMethod::Ascp)?;
-            download_with_ascp(&processed, &config, args).await?;
-        }
         DownloadMethod::Ftp => {
             download_with_ftp(&processed, &config, args).await?;
         }
@@ -851,17 +847,6 @@ async fn download_with_ftp(records: &[ProcessedRecord], config: &Config, args: &
         config,
         &args.output,
         ebidownload_core::ftp::Protocol::Ftp,
-        args.multithreads
-    ).await
-}
-
-// Aspera Entry
-async fn download_with_ascp(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs) -> Result<()> {
-    ebidownload_core::ftp::process_downloads(
-        records,
-        config,
-        &args.output,
-        ebidownload_core::ftp::Protocol::Ascp,
         args.multithreads
     ).await
 }

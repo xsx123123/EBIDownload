@@ -65,12 +65,8 @@ fn ensure_default_config(path: &Path) -> Result<(), String> {
     if !path.exists() {
         let default = serde_yaml::to_string(&serde_json::json!({
             "software": {
-                "ascp": "",
                 "prefetch": "",
                 "fasterq_dump": "",
-            },
-            "setting": {
-                "openssh": "",
             }
         }))
         .map_err(|e| format!("Failed to serialize default config: {}", e))?;
@@ -176,12 +172,8 @@ pub async fn save_config_command(
 
     let yaml_config = serde_yaml::to_string(&serde_json::json!({
         "software": {
-            "ascp": "",
             "prefetch": config.prefetch_path,
             "fasterq_dump": config.fasterq_dump_path,
-        },
-        "setting": {
-            "openssh": "",
         }
     }))
     .map_err(|e| format!("Failed to serialize config: {}", e))?;
@@ -331,8 +323,7 @@ async fn run_download_async(
     match options.download_method {
         DownloadMethod::Aws => download_aws(processed, config, options, app_handle, pause_token).await,
         DownloadMethod::Prefetch => download_prefetch(processed, config, options, app_handle).await,
-        DownloadMethod::Ftp => download_ftp(processed, config, options, app_handle, crate::ftp::Protocol::Ftp).await,
-        DownloadMethod::Ascp => download_ftp(processed, config, options, app_handle, crate::ftp::Protocol::Ascp).await,
+        DownloadMethod::Ftp => download_ftp(processed, config, options, app_handle).await,
         DownloadMethod::Auto => {
             app_handle.emit("download-event", DownloadEvent::Log {
                 level: "info".to_string(),
@@ -602,18 +593,13 @@ async fn download_ftp(
     config: Config,
     options: DownloadOptions,
     app_handle: ::tauri::AppHandle,
-    protocol: crate::ftp::Protocol,
 ) -> Result<()> {
-    let protocol_name = match protocol {
-        crate::ftp::Protocol::Ftp => "FTP",
-        crate::ftp::Protocol::Ascp => "Aspera",
-    };
     app_handle.emit("download-event", DownloadEvent::Log {
         level: "info".to_string(),
-        message: format!("Starting {} download...", protocol_name),
+        message: "Starting FTP download...".to_string(),
     })?;
 
-    // Show indeterminate progress for each run while FTP/Aspera works in batch mode.
+    // Show indeterminate progress for each run while FTP works in batch mode.
     for record in &processed {
         app_handle.emit("download-event", DownloadEvent::Progress {
             run_id: record.run_accession.clone(),
@@ -627,7 +613,7 @@ async fn download_ftp(
         &processed,
         &config,
         &options.output,
-        protocol,
+        crate::ftp::Protocol::Ftp,
         options.multithreads,
     ).await?;
 

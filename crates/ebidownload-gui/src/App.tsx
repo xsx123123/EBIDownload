@@ -874,7 +874,7 @@ function DownloadTab({
               disabled={isDownloading}
             >
               <option value="Aws">AWS S3 (Recommended)</option>
-              <option value="Ftp">FTP / Aspera</option>
+              <option value="Ftp">FTP</option>
               <option value="Prefetch">NCBI Prefetch</option>
               <option value="Auto">Automatic Fallback</option>
             </select>

@@ -20,19 +20,12 @@ use tracing::info;
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub software: SoftwarePaths,
-    pub setting: Option<SettingPaths>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SoftwarePaths {
-    pub ascp: Option<PathBuf>,
     pub prefetch: PathBuf,
     pub fasterq_dump: PathBuf,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct SettingPaths {
-    pub openssh: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -109,7 +102,6 @@ pub struct ProcessedRecord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum DownloadMethod {
-    Ascp,
     Ftp,
     Prefetch,
     Aws,
@@ -401,17 +393,6 @@ pub fn compress_fastq_files(
 
 pub fn validate_config(config: &Config, method: DownloadMethod) -> Result<()> {
     match method {
-        DownloadMethod::Ascp => {
-            let ascp = config.software.ascp.as_ref()
-                .ok_or_else(|| anyhow!("ascp path not configured"))?;
-            let openssh = config
-                .setting
-                .as_ref()
-                .and_then(|s| s.openssh.as_ref())
-                .ok_or_else(|| anyhow!("Aspera openssh key not configured"))?;
-            check_executable(ascp, "ascp")?;
-            check_file_exists(openssh, "Aspera openssh key")?;
-        }
         DownloadMethod::Prefetch => {
             check_executable(&config.software.prefetch, "prefetch")?;
             check_executable(&config.software.fasterq_dump, "fasterq-dump")?;
@@ -425,17 +406,6 @@ pub fn validate_config(config: &Config, method: DownloadMethod) -> Result<()> {
 }
 
 fn check_executable(path: &Path, name: &str) -> Result<()> {
-    if !path.exists() {
-        return Err(anyhow::anyhow!(
-            "{} not found at configured path: {}",
-            name,
-            path.display()
-        ));
-    }
-    Ok(())
-}
-
-fn check_file_exists(path: &Path, name: &str) -> Result<()> {
     if !path.exists() {
         return Err(anyhow::anyhow!(
             "{} not found at configured path: {}",

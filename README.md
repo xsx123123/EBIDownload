@@ -3,11 +3,11 @@
 
 # EBIDownload
 
-EBIDownload is a Rust-based toolkit for efficiently downloading and uploading sequencing data from the European Bioinformatics Institute (EBI) and NCBI SRA. It provides both a **command-line interface (CLI)** and a **cross-platform desktop GUI** (powered by Tauri), making it accessible to both bioinformatics engineers and wet-lab researchers.
+EBIDownload is a Rust-based toolkit for efficiently downloading and uploading sequencing data from the European Bioinformatics Institute (EBI), NCBI SRA, and GEO (Gene Expression Omnibus). It provides both a **command-line interface (CLI)** and a **cross-platform desktop GUI** (powered by Tauri), making it accessible to both bioinformatics engineers and wet-lab researchers.
+
+For GEO datasets, simply obtain the associated **BioProject ID** (e.g., `PRJNAxxxxxx`) and pass it to EBIDownload to fetch the underlying sequencing data at high speed.
 
 By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also uses Rust-native parallel gzip compression (via the [`gzp`](https://crates.io/crates/gzp) crate with the `libdeflate` backend), eliminating the need to install external compression tools.
-
-In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high-speed download method, which can be selected via the `-d ascp` flag (CLI) or the download method dropdown (GUI). To use this fallback, you must configure the Aspera path and key in the `EBIDownload.yaml` file (see [Configuration File](#4-configuration-file)).
 
 ## What's New in v1.4.0
 
@@ -30,11 +30,11 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 
 - **Dual Interface (CLI + GUI)**: Choose between a powerful command-line tool for scripting and automation, or an intuitive desktop GUI (Windows/macOS/Linux) for visual operation.
 - **AWS S3 Acceleration (Most Recommended)**: Direct multi-threaded downloading from NCBI SRA AWS S3 buckets, maximizing bandwidth utilization for global high-speed access. This is the fastest and most reliable method for large-scale data acquisition.
-- **Aspera Fallback (Alternative)**: Integrates Aspera CLI (`ascp`) as an alternative high-speed channel when AWS S3 is unavailable or not preferred.
 - **Parallel Processing**: Supports multi-threaded downloading, conversion, and native parallel gzip compression.
 - **Easy Configuration**: Manages software paths and keys through a simple YAML file. The GUI provides a visual settings panel for path configuration.
+- **GEO Dataset Support**: Download sequencing data associated with GEO records using the corresponding **BioProject ID** (`PRJNAxxxxxx`).
 - **Flexible Usage**: Supports direct downloads via project accession numbers or TSV file lists.
-- **Resumable Downloads**: Supports resumable downloads in `aws`, `ascp` and `prefetch` modes, ensuring download continuity.
+- **Resumable Downloads**: Supports resumable downloads in `aws` and `prefetch` modes, ensuring download continuity.
 - **Smart Auto-Fallback**: Automatically attempts AWS S3 first and seamlessly switches to Prefetch if the AWS download fails (Mode: `auto`).
 - **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
 - **Real-time Progress (GUI)**: Visual progress bars, per-run download speed, smooth overall progress, download queue management, and live log streaming in the desktop application.
@@ -45,19 +45,44 @@ In addition, EBIDownload supports **Aspera CLI (`ascp`)** as an alternative high
 
 ---
 
+## Quick Start
+
+After [building](#3-building-the-program) the CLI, you can start downloading data in just a few commands:
+
+```bash
+# 1. Install the required sra-tools dependency automatically
+./target/release/EBIDownload deps install
+
+# 2. Download a project by BioProject ID using AWS S3 acceleration (default)
+./target/release/EBIDownload download -A PRJNA1251654 -o ./data
+
+# 3. Download with more parallelism for large datasets
+./target/release/EBIDownload download -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
+```
+
+For **GEO datasets**, find the associated **BioProject ID** on the GEO record page (usually under "SRA" or "BioProject" links) and pass it to EBIDownload:
+
+```bash
+# Download GEO data via its BioProject ID at high speed
+./target/release/EBIDownload download -A PRJNA833659 -o ./data -p 4 -t 8
+```
+
+Run `./target/release/EBIDownload --help` or `./target/release/EBIDownload download --help` for the full list of options.
+
+---
+
 ## 1. Prerequisites and Setup
 
 **Why are external dependencies required?**
 Since the raw data downloaded from NCBI/EBI is typically in `.sra` format, it must be converted to standard `.fastq` format. Because there are currently no mature native Rust libraries available for parsing `.sra` files, this tool relies on the external `sra-tools` toolkit for this conversion step. The subsequent `.fastq` → `.fastq.gz` compression is handled internally by Rust-native parallel gzip (no external compression tool needed).
 
-Only one external dependency is required; the rest are optional:
+Only one external dependency is required:
 
 - **`sra-tools` (`prefetch` / `fasterq-dump`)**: Required for `prefetch` downloads and `.sra` → `.fastq` conversion. EBIDownload can **automatically download and install** this for you (see [Dependency Management](#3b-dependency-management)). You can also install it manually if you prefer.
-- **`aspera-cli` (`ascp`)**: Optional. A high-speed data transfer client by IBM, used as an alternative to traditional FTP/HTTP downloads. If you want to use `ascp` mode, install it manually and configure the path in `EBIDownload.yaml`.
 
 ### a. Conda Environment (optional manual install)
 
-If you prefer Conda, you can create an isolated runtime environment to install `sra-tools` and `aspera-cli`.
+If you prefer Conda, you can create an isolated runtime environment to install `sra-tools`.
 
 ```bash
 # Create and activate the conda environment using the provided .yaml file
@@ -159,9 +184,6 @@ npm run tauri build
 software:
   prefetch: /opt/homebrew/bin/prefetch
   fasterq_dump: /opt/homebrew/bin/fasterq-dump
-  ascp: /Applications/Aspera\ Connect.app/Contents/Resources/ascp
-setting:
-  openssh: /Applications/Aspera\ Connect.app/Contents/Resources/asperaweb_id_dsa.openssh
 ```
 
 #### Windows
@@ -249,30 +271,26 @@ jobs:
 
 ## 4. Configuration File
 
-This program uses a YAML file to configure the paths for external tools, including the Aspera CLI (`ascp`) and `sra-tools` (`prefetch`, `fasterq-dump`).
+This program uses a YAML file to configure the paths for external tools, including `sra-tools` (`prefetch`, `fasterq-dump`).
 
-**Default location**: `~/.EBIDownload/EBIDownload.yaml`.  
+**Default location**: `~/.EBIDownload/EBIDownload.yaml`.
 The file is created automatically on first launch if it does not exist, and it is reloaded on startup.
 
 `sra-tools` paths are optional: if they are not present in the YAML file, EBIDownload falls back to a managed installation (created by `EBIDownload deps install` or the GUI's startup install dialog) and finally to executables found in your `PATH`.
 
-You can **manually create** this file if you want to use your own installations. Even if you primarily use the default **AWS S3** mode, it is recommended to configure the Aspera path and key so that the `ascp` fallback is ready when needed.
+You can **manually create** this file if you want to use your own installations.
 
 Below is the standard format for the `EBIDownload.yaml` file:
 
 ```yaml
 # EBIDownload Setting yaml
 software:
-  ascp: /path/to/your/ascp
   prefetch: /path/to/your/prefetch
   fasterq_dump: /path/to/your/fasterq-dump
-setting:
-  openssh: /path/to/your/asperaweb_id_dsa.openssh
 ```
 
 **Important Notes**:
-- The `software` section must point to the absolute paths of the `ascp`, `prefetch`, and `fasterq-dump` executables.
-- The `setting` section is optional. When present, the `openssh` key must point to the absolute path of the key file provided by Aspera Connect (`asperaweb_id_dsa.openssh`). This is required when using the Aspera (`ascp`) download mode.
+- The `software` section must point to the absolute paths of the `prefetch` and `fasterq-dump` executables.
 - Ensure all paths are correct, or the program will not run properly in the corresponding download mode.
 
 ---
@@ -294,7 +312,7 @@ npm run tauri dev
 
 | Tab | Function |
 |-----|----------|
-| **Download** | Enter Accession ID, select output directory, choose download method (AWS/Aspera/FTP/Prefetch/Auto), set parallel threads, and start downloading. Supports fetching metadata preview before download. |
+| **Download** | Enter Accession ID, select output directory, choose download method (AWS/FTP/Prefetch/Auto), set parallel threads, and start downloading. Supports fetching metadata preview before download. |
 | **Upload** | Select files, enter S3 bucket name, configure upload settings, and submit to NCBI SRA via AWS S3. Shows real per-file upload progress and forwards core logs to the live log panel. |
 | **Settings** | Visually configure paths for `prefetch`, `fasterq-dump`, and other software executables. |
 | **About** | Software information, version, a "View on GitHub" link to the [project repository](https://github.com/xsx123123/EBIDownload), and a reflection on the atoms that make us all. |
@@ -328,7 +346,7 @@ A circular **theme toggle button** in the top-right corner of the header switche
 | `-T`  | `--tsv`          | Download using a TSV file containing Accession IDs |              |
 | `-o`  | `--output`       | **Required**, the output directory for downloaded files |              |
 | `-p`  | `--multithreads` | Number of files to download in parallel          | 4            |
-| `-d`  | `--download`     | Download method (`aws`, `ascp`, `ftp`, `prefetch`, `auto`) | `aws`        |
+| `-d`  | `--download`     | Download method (`aws`, `ftp`, `prefetch`, `auto`) | `aws`        |
 | `-y`  | `--yaml`         | Specify the path to the `EBIDownload.yaml` config file | `EBIDownload.yaml` |
 |       | `--log-level`    | Log level (`debug`, `info`, `warn`, `error`)     | `info`       |
 |       | `--log-format`   | Log output format (`text`, `json`)               | `text`       |
@@ -530,10 +548,9 @@ EBIDownload upload -b my-sra-bucket --prefix project_001 -f *.fastq.gz
 | Method | Cost | Speed | Best For |
 |--------|------|-------|----------|
 | **S3 Upload** (`EBIDownload upload`) | ~$0.023/GB/month | Fastest, most reliable | Large datasets (100 GB+), unstable networks |
-| **Aspera (ascp)** | Free | Fast | Medium datasets, good network |
 | **NCBI Web Upload** | Free | Slow, unreliable for large files | Small datasets (< 10 GB) |
 
-> **Tip**: If your data is small, use the free NCBI Web Upload or Aspera. S3 upload is a "pay a little for speed and reliability" option — ideal when you have hundreds of GB to submit and want enterprise-grade bandwidth with resumable transfers.
+> **Tip**: If your data is small, use the free NCBI Web Upload. S3 upload is a "pay a little for speed and reliability" option — ideal when you have hundreds of GB to submit and want enterprise-grade bandwidth with resumable transfers.
 
 ### f. Complete Workflow Example
 
@@ -560,3 +577,10 @@ EBIDownload upload -b my-sra-bucket \
 # Step 5: Wait for SRA confirmation email, then delete the bucket
 aws s3 rb s3://my-sra-bucket --force
 ```
+
+---
+**Author**: JZHANG | **Version**: v1.4.0
+
+## 🔗 Links
+- GitHub: [repository](https://github.com/xsx123123/EBIDownload)
+- LINUX DO: [Announcement](https://linux.do/) (Original)
