@@ -5,6 +5,7 @@ pub mod deps;
 pub mod ftp;
 pub mod prefetch;
 pub mod progress;
+pub mod progress_store;
 pub mod upload;
 
 use anyhow::{anyhow, Context, Result};
@@ -12,7 +13,7 @@ use gzp::{deflate::Gzip, ZBuilder};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use tracing::info;
 
@@ -349,6 +350,7 @@ pub fn compress_fastq_files(
     output_dir: &Path,
     run_id: &str,
     threads: usize,
+    progress_cb: Option<progress_store::CompressionProgressCallback>,
 ) -> Result<Vec<PathBuf>> {
     let mut compressed = Vec::new();
     let candidates = [
@@ -366,9 +368,10 @@ pub fn compress_fastq_files(
         let output_path = output_dir.join(format!("{}.gz", name));
         info!("📦 Compressing {} -> {}", input_path.display(), output_path.display());
 
+        let input_size = input_path.metadata()?.len();
         let input = File::open(&input_path)
             .with_context(|| format!("Failed to open {}", input_path.display()))?;
-        let mut input = BufReader::new(input);
+        let input = BufReader::new(input);
         let output = File::create(&output_path)
             .with_context(|| format!("Failed to create {}", output_path.display()))?;
 
@@ -376,8 +379,15 @@ pub fn compress_fastq_files(
             .num_threads(threads)
             .from_writer(output);
 
-        std::io::copy(&mut input, &mut writer)
-            .with_context(|| format!("Failed to compress {}", input_path.display()))?;
+        if let Some(cb) = &progress_cb {
+            let mut counting = CountingReader::new(input, input_size, cb.clone());
+            std::io::copy(&mut counting, &mut writer)
+                .with_context(|| format!("Failed to compress {}", input_path.display()))?;
+        } else {
+            let mut input = input;
+            std::io::copy(&mut input, &mut writer)
+                .with_context(|| format!("Failed to compress {}", input_path.display()))?;
+        }
         writer
             .finish()
             .with_context(|| format!("Failed to finalize {}", output_path.display()))?;
@@ -389,6 +399,61 @@ pub fn compress_fastq_files(
     }
 
     Ok(compressed)
+}
+
+struct CountingReader<R: std::io::Read> {
+    inner: R,
+    bytes_read: u64,
+    total: u64,
+    callback: progress_store::CompressionProgressCallback,
+}
+
+impl<R: std::io::Read> CountingReader<R> {
+    fn new(inner: R, total: u64, callback: progress_store::CompressionProgressCallback) -> Self {
+        Self {
+            inner,
+            bytes_read: 0,
+            total,
+            callback,
+        }
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.bytes_read += n as u64;
+        (self.callback)(self.bytes_read, self.total);
+        Ok(n)
+    }
+}
+
+/// Generate md5.txt in md5sum-compatible format: "<md5>  <filename>\n"
+pub fn generate_md5sum_file(
+    output_dir: &Path,
+    gz_files: &[PathBuf],
+) -> Result<PathBuf> {
+    let md5_path = output_dir.join("md5.txt");
+    let mut file = File::create(&md5_path)?;
+
+    for gz_path in gz_files {
+        let mut f = File::open(gz_path)?;
+        let mut ctx = md5::Context::new();
+        let mut buf = vec![0u8; 1024 * 1024];
+        loop {
+            let n = f.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            ctx.consume(&buf[..n]);
+        }
+        let hash = format!("{:x}", ctx.compute());
+        let filename = gz_path.file_name().unwrap().to_string_lossy();
+        writeln!(file, "{}  {}", hash, filename)?;
+    }
+
+    info!("📝 md5.txt generated: {}", md5_path.display());
+    Ok(md5_path)
 }
 
 pub fn validate_config(config: &Config, method: DownloadMethod) -> Result<()> {
@@ -439,7 +504,7 @@ mod tests {
         writeln!(f2, "+").unwrap();
         writeln!(f2, "!!!!!!!!").unwrap();
 
-        let compressed = compress_fastq_files(tmp.path(), run_id, 2).unwrap();
+        let compressed = compress_fastq_files(tmp.path(), run_id, 2, None).unwrap();
         assert_eq!(compressed.len(), 2);
 
         assert!(tmp.path().join(format!("{}_1.fastq.gz", run_id)).exists());

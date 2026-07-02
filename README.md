@@ -42,6 +42,8 @@ By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra
 - **Light / Dark Themes (GUI)**: One-click theme toggle in the header; choice is persisted across sessions and follows the system theme on first launch.
 - **Automatic Dependency Management**: One-click or CLI-driven installation of `sra-tools`; the GUI checks for dependencies on startup.
 - **Auto-Collapse UI During Download**: Configuration cards fold away and the progress panel expands automatically when a download starts.
+- **HTTP Progress API (CLI)**: Optional encrypted HTTP endpoint for external platforms to query real-time download progress (AES-256-GCM).
+- **md5.txt Generation**: Automatically generates md5sum-compatible checksum file for all compressed outputs after download completes.
 
 ---
 
@@ -360,6 +362,8 @@ A circular **theme toggle button** in the top-right corner of the header switche
 |       | `--exclude-run`  | Regex pattern to exclude runs matching this      |              |
 |       | `--cleanup-sra`  | Remove intermediate .sra files after conversion | `false`      |
 |       | `--dry-run`      | Show what would be downloaded without actually downloading | `false` |
+|       | `--progress-port`| Enable HTTP progress API on this port (AES-256-GCM encrypted) | — |
+|       | `--write-progress-key` | Write encryption key to `progress.key` in output directory (default: not written) | `false` |
 | `-h`  | `--help`         | Print help information                           |              |
 | `-V`  | `--version`      | Print version information                        |              |
 
@@ -579,6 +583,188 @@ aws s3 rb s3://my-sra-bucket --force
 ```
 
 ---
+
+## 8. HTTP Progress API (Encrypted)
+
+EBIDownload CLI provides an optional **HTTP Progress API** that allows external platforms to query real-time download progress. The progress data is encrypted with **AES-256-GCM** to ensure security.
+
+### a. Overview
+
+When enabled via `--progress-port`, EBIDownload starts an HTTP server that serves encrypted progress data. The encryption key is:
+- **Generated at compile time** (via `EBIDOWNLOAD_PROGRESS_KEY` env var) and embedded in the binary
+- **NOT written to disk by default** — add `--write-progress-key` to write it to `progress.key` in the output directory
+- **Never exposed via HTTP** — no HTTP endpoint returns the key
+
+The platform can obtain the key in two ways:
+1. **Known at compile time**: If your platform set `EBIDOWNLOAD_PROGRESS_KEY` before compilation, it already knows the key — no file needed
+2. **Read from file**: Use `--write-progress-key` at runtime to write the key to `progress.key`, then read it from the output directory
+
+### b. Compile with Custom Key
+
+You can set a custom encryption key at compile time using the `EBIDOWNLOAD_PROGRESS_KEY` environment variable:
+
+```bash
+# Generate a random 32-character key (or use your own)
+export EBIDOWNLOAD_PROGRESS_KEY=$(openssl rand -hex 16)
+echo "Your key: $EBIDOWNLOAD_PROGRESS_KEY"
+
+# Build with the custom key embedded
+CC=clang cargo build -p ebidownload-cli --release
+
+# The key is now embedded in the binary
+./target/release/EBIDownload --version
+```
+
+If `EBIDOWNLOAD_PROGRESS_KEY` is not set, a deterministic key is derived from the crate version.
+
+### c. Enable Progress API at Runtime
+
+```bash
+# Start download with progress API on port 8080
+./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080
+
+# If external platforms need to read the key from file, add --write-progress-key
+./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080 --write-progress-key
+```
+
+By default, the encryption key is **not** written to disk. Add `--write-progress-key` to write it to `./data/progress.key`. This will:
+1. Start an HTTP server on `0.0.0.0:8080`
+2. (Optional) Write the encryption key to `./data/progress.key`
+3. Track progress for all 3 stages: download → extraction → compression
+
+### d. Query Progress from External Platform
+
+The platform reads the key file and queries the HTTP endpoint:
+
+```bash
+# 1. Read the encryption key (shared securely, e.g., via mounted volume)
+KEY=$(cat ./data/progress.key)
+
+# 2. Query the encrypted progress
+RESPONSE=$(curl -s http://localhost:8080/progress)
+echo "$RESPONSE"
+# {"ciphertext":"...","nonce":"..."}
+```
+
+### e. Decrypt Progress Data (Python Example)
+
+```python
+import json
+import base64
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+# Read the key (32 bytes hex-encoded)
+with open("./data/progress.key", "r") as f:
+    key = bytes.fromhex(f.read().strip())
+
+# Query the API
+import requests
+resp = requests.get("http://localhost:8080/progress").json()
+ciphertext = base64.b64decode(resp["ciphertext"])
+nonce = base64.b64decode(resp["nonce"])
+
+# Decrypt
+aesgcm = AESGCM(key)
+plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+progress = json.loads(plaintext)
+
+# Example output
+for run_id, data in progress.items():
+    print(f"{run_id}: {data['stage']} ({data['overall_percent']:.1f}%)")
+    print(f"  Download:    {data['download']['percent']:.1f}%")
+    print(f"  Extraction:  {data['extraction']['percent']:.1f}%")
+    print(f"  Compression: {data['compression']['percent']:.1f}%")
+```
+
+### f. Progress Data Structure
+
+The decrypted JSON contains per-run progress with 3-stage weighted tracking:
+
+```json
+{
+  "SRR12345678": {
+    "run_id": "SRR12345678",
+    "stage": "compressing",
+    "overall_percent": 75.5,
+    "download": {
+      "bytes_done": 1073741824,
+      "bytes_total": 1073741824,
+      "weight": 1073741824,
+      "percent": 100.0
+    },
+    "extraction": {
+      "bytes_done": 3221225472,
+      "bytes_total": 3221225472,
+      "weight": 3221225472,
+      "percent": 100.0
+    },
+    "compression": {
+      "bytes_done": 1610612736,
+      "bytes_total": 3221225472,
+      "weight": 3221225472,
+      "percent": 50.0
+    }
+  }
+}
+```
+
+**Stage values**: `pending` → `downloading` → `extracting` → `compressing` → `completed` (or `failed`)
+
+### g. Security Considerations
+
+| Aspect | Implementation |
+|--------|----------------|
+| **Encryption** | AES-256-GCM (authenticated encryption) |
+| **Key storage** | Embedded in binary at compile time |
+| **Key file** | NOT written by default; opt-in via `--write-progress-key` |
+| **Key distribution** | Platform uses compile-time key, or reads `progress.key` if written |
+| **HTTP exposure** | Key is never exposed via HTTP |
+| **Nonce** | Random 12-byte nonce per request (prevents replay attacks) |
+
+> **Warning**: The key file (`progress.key`) must be shared securely with the consuming platform. Treat it like a password — anyone with the key can decrypt the progress data.
+
+### h. Complete Workflow Example
+
+```bash
+# 1. Compile with custom key
+export EBIDOWNLOAD_PROGRESS_KEY="my-secret-key-1234567890abcdef"
+CC=clang cargo build -p ebidownload-cli --release
+
+# 2. Start download with progress API (key NOT written to disk by default)
+./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080
+
+# 3. If platform needs to read key from file, use --write-progress-key
+./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080 --write-progress-key
+
+# 4. In another terminal / platform, query progress
+#    (platform already knows the key from compile time, or reads progress.key)
+curl -s http://localhost:8080/progress | jq .
+
+# 5. Decrypt using Python (see example above)
+python3 decrypt_progress.py
+```
+
+### i. md5.txt Output
+
+After all downloads complete, EBIDownload automatically generates `md5.txt` in the output directory:
+
+```bash
+$ cat ./data/md5.txt
+a1b2c3d4e5f6...  SRR12345678_1.fastq.gz
+f6e5d4c3b2a1...  SRR12345678_2.fastq.gz
+```
+
+This file uses the standard **md5sum format** and can be verified with:
+
+```bash
+cd ./data
+md5sum -c md5.txt
+# SRR12345678_1.fastq.gz: OK
+# SRR12345678_2.fastq.gz: OK
+```
+
+---
+
 **Author**: JZHANG | **Version**: v1.4.0
 
 ## 🔗 Links

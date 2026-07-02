@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use crate::progress::{transfer_bar_style, verify_bar_style};
+use crate::progress_store::ProgressStore;
 use indicatif::{MultiProgress, ProgressBar};
 use md5;
 use quick_xml::events::Event;
@@ -211,6 +212,7 @@ pub struct ResumableDownloader {
     mp: Option<Arc<MultiProgress>>,
     progress_bytes: Option<Arc<AtomicU64>>,
     pause_token: Option<PauseToken>,
+    progress_store: Option<ProgressStore>,
 }
 
 impl ResumableDownloader {
@@ -221,21 +223,21 @@ impl ResumableDownloader {
         chunk_size_mb: u64,
         max_workers: usize,
         mp: Option<Arc<MultiProgress>>,
+        progress_store: Option<ProgressStore>,
     ) -> Result<Self> {
         let raw_name = metadata.s3_uri.split('/').next_back().unwrap_or(&run_id).to_string();
         let filename = if raw_name.ends_with(".sra") { raw_name } else { format!("{}.sra", raw_name) };
         let filepath = save_dir.join(&filename);
         let meta_file = filepath.with_extension("meta.json");
 
-        // 🟢 Config: Download client also adds 60s timeout
         let client = Client::builder()
             .http1_only()
-            .timeout(Duration::from_secs(60)) // Increase timeout
+            .timeout(Duration::from_secs(60))
             .connect_timeout(Duration::from_secs(10))
             .pool_max_idle_per_host(max_workers)
             .build()?;
 
-        Ok(Self { run_id, metadata, filepath, meta_file, chunk_size: chunk_size_mb * 1024 * 1024, max_workers, client, mp, progress_bytes: None, pause_token: None })
+        Ok(Self { run_id, metadata, filepath, meta_file, chunk_size: chunk_size_mb * 1024 * 1024, max_workers, client, mp, progress_bytes: None, pause_token: None, progress_store })
     }
 
     pub fn with_progress_bytes(mut self, progress: Arc<AtomicU64>) -> Self {
@@ -349,11 +351,22 @@ impl ResumableDownloader {
         // 🟢 Spawn progress monitor
         let pb_monitor = pb.clone();
         let gb_monitor = global_bytes.clone();
+        let store_monitor = self.progress_store.clone();
+        let run_id_monitor = self.run_id.clone();
+        let sra_size_monitor = self.metadata.size;
         let monitor_handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             loop {
                 interval.tick().await;
-                pb_monitor.set_position(gb_monitor.load(Ordering::Relaxed));
+                let bytes = gb_monitor.load(Ordering::Relaxed);
+                pb_monitor.set_position(bytes);
+                if let Some(store) = &store_monitor {
+                    let mut map = store.write().await;
+                    if let Some(rp) = map.get_mut(&run_id_monitor) {
+                        rp.download.update(bytes, sra_size_monitor);
+                        rp.recalculate_overall();
+                    }
+                }
             }
         });
 

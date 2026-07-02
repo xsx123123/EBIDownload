@@ -11,6 +11,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::process::Command;
 use tokio::sync::Semaphore;
 use tracing::{info, warn, error};
@@ -18,6 +19,12 @@ use tracing_subscriber::{fmt, EnvFilter};
 use std::time::Duration;
 
 use ebidownload_core::*;
+use ebidownload_core::progress_store::{
+    ProgressStore, RunProgress, RunStage, StageProgress,
+    new_progress_store,
+};
+
+mod http_server;
 
 const VERSION: &str = "1.4.0";
 const SCRIPT_NAME: &str = "EBIDownload";
@@ -125,6 +132,10 @@ struct DownloadArgs {
     cleanup_sra: bool,
     #[arg(long, default_value = "false", help = "Show what would be downloaded without actually downloading", help_heading = "Advanced Options")]
     dry_run: bool,
+    #[arg(long, value_name = "PORT", help = "Enable HTTP progress API on this port (AES-256-GCM encrypted)", help_heading = "Advanced Options")]
+    progress_port: Option<u16>,
+    #[arg(long, default_value = "false", help = "Write encryption key to progress.key file in output directory (required for external platforms to decrypt progress)", help_heading = "Advanced Options")]
+    write_progress_key: bool,
 }
 
 // ============================================================
@@ -380,6 +391,24 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
         return Ok(());
     }
 
+    let progress_store = new_progress_store();
+
+    if let Some(port) = args.progress_port {
+        if args.write_progress_key {
+            let key_hex = http_server::progress_key_hex();
+            let key_path = args.output.join("progress.key");
+            fs::write(&key_path, &key_hex)?;
+            info!("🔑 Progress key written to {}", key_path.display());
+        }
+
+        let store = progress_store.clone();
+        tokio::spawn(async move {
+            if let Err(e) = http_server::start_progress_server(port, store).await {
+                tracing::error!("Progress server failed: {}", e);
+            }
+        });
+    }
+
     match args.download {
         DownloadMethod::Ftp => {
             download_with_ftp(&processed, &config, args).await?;
@@ -391,16 +420,13 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
         }
         DownloadMethod::Aws => {
             validate_config(&config, DownloadMethod::Aws)?;
-            download_with_aws(&processed, &config, args).await?;
+            download_with_aws(&processed, &config, args, progress_store.clone()).await?;
         }
         DownloadMethod::Auto => {
             info!("🤖 Auto Mode: Attempting AWS S3 first...");
             validate_config(&config, DownloadMethod::Aws)?;
             validate_config(&config, DownloadMethod::Prefetch)?;
-            // Note: In a full production system, we would track individual file failures.
-            // Here we attempt AWS. If it completes, great.
-            // If the entire batch fails (e.g. API error), we catch it and try Prefetch.
-            if let Err(e) = download_with_aws(&processed, &config, args).await {
+            if let Err(e) = download_with_aws(&processed, &config, args, progress_store.clone()).await {
                 warn!("⚠️  AWS S3 download encountered issues: {}. Switching to Prefetch...", e);
                 download_with_prefetch(&processed, &config, args).await?;
             }
@@ -713,7 +739,7 @@ async fn download_with_prefetch(records: &[ProcessedRecord], config: &Config, ar
 }
 
 // AWS Entry (Keep original logic)
-async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs) -> Result<()> {
+async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &DownloadArgs, progress_store: ProgressStore) -> Result<()> {
     info!("☁️  Starting AWS S3 downloads...");
 
     let file_concurrency = args.multithreads;
@@ -722,6 +748,22 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
     let chunk_size_mb = args.chunk_size;
 
     info!("⚙️  Config: Parallel Files = {}, Threads/File = {}, Chunk Size = {}MB", file_concurrency, chunk_concurrency, chunk_size_mb);
+
+    {
+        let mut map = progress_store.write().await;
+        for record in records {
+            let sra_size = record.fastq_bytes_1 + record.fastq_bytes_2.unwrap_or(0);
+            let extract_weight = (sra_size as f64) * 3.0;
+            map.insert(record.run_accession.clone(), RunProgress {
+                run_id: record.run_accession.clone(),
+                stage: RunStage::Pending,
+                overall_percent: 0.0,
+                download: StageProgress::new(sra_size as f64),
+                extraction: StageProgress::new(extract_weight),
+                compression: StageProgress::new(extract_weight),
+            });
+        }
+    }
 
     let semaphore = Arc::new(Semaphore::new(file_concurrency));
     let mp = Arc::new(GLOBAL_MP.clone());
@@ -739,12 +781,21 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
         let chunk_size = chunk_size_mb;
         let fasterq_dump = fasterq_dump_path.clone();
         let cleanup_sra = args.cleanup_sra;
+        let progress_store = progress_store.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
 
+            {
+                let mut map = progress_store.write().await;
+                if let Some(rp) = map.get_mut(&run_id) {
+                    rp.stage = RunStage::Downloading;
+                }
+            }
+
             let metadata = ebidownload_core::aws_s3::SraUtils::get_metadata(&run_id, None).await?;
             let sra_filename = format!("{}.sra", run_id);
+            let sra_size = metadata.as_ref().map(|m| m.size).unwrap_or(0);
             info!(target: "download_detail", "📥 [{}] Step 1: Downloading via AWS S3...", run_id);
 
             if let Some(sra_metadata) = metadata {
@@ -755,18 +806,35 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                     chunk_size,
                     max_workers,
                     Some(mp),
+                    Some(progress_store.clone()),
                 ).await?;
 
                 let success = downloader.start().await?;
                 if !success {
+                    let mut map = progress_store.write().await;
+                    if let Some(rp) = map.get_mut(&run_id) {
+                        rp.stage = RunStage::Failed;
+                    }
                     return Err(anyhow::anyhow!("Download failed for {}", run_id));
                 }
             } else {
                 warn!("❌ [{}] No AWS S3 URI found", run_id);
+                let mut map = progress_store.write().await;
+                if let Some(rp) = map.get_mut(&run_id) {
+                    rp.stage = RunStage::Failed;
+                }
                 return Err(anyhow::anyhow!("No S3 URI for {}", run_id));
             }
 
-            // Smart check: If FASTQ file exists and is not empty, skip conversion
+            {
+                let mut map = progress_store.write().await;
+                if let Some(rp) = map.get_mut(&run_id) {
+                    rp.download.percent = 100.0;
+                    rp.stage = RunStage::Extracting;
+                    rp.recalculate_overall();
+                }
+            }
+
             let fq_1 = output_dir.join(format!("{}_1.fastq", run_id));
             let fq_single = output_dir.join(format!("{}.fastq", run_id));
             let fq_exists = (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) ||
@@ -776,8 +844,9 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                 info!(target: "download_detail", "⏩ [{}] FASTQ files already exist, skipping conversion.", run_id);
             } else {
                 info!(target: "download_detail", "🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
-                // Safe command execution
-                let output = Command::new(&fasterq_dump)
+
+                let estimated_fastq_size = sra_size * 3;
+                let mut child = Command::new(&fasterq_dump)
                     .arg("--split-3")
                     .arg("-e").arg(process_threads.to_string())
                     .arg("-O").arg(".")
@@ -786,29 +855,116 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                     .current_dir(&output_dir)
                     .stdout(Stdio::null())
                     .stderr(Stdio::piped())
-                    .output()
-                    .await;
+                    .spawn()?;
 
-                match output {
-                     Ok(out) if out.status.success() => {},
-                     Ok(out) => warn!("⚠️ [{}] fasterq-dump error: {}", run_id, String::from_utf8_lossy(&out.stderr)),
-                     Err(e) => warn!("⚠️ [{}] fasterq-dump execution failed: {}", run_id, e),
+                let output_dir_mon = output_dir.clone();
+                let run_id_mon = run_id.clone();
+                let store_mon = progress_store.clone();
+                let extract_monitor = tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(Duration::from_millis(500));
+                    loop {
+                        interval.tick().await;
+                        let mut total_size = 0u64;
+                        for name in &[
+                            format!("{}.fastq", run_id_mon),
+                            format!("{}_1.fastq", run_id_mon),
+                            format!("{}_2.fastq", run_id_mon),
+                        ] {
+                            let path = output_dir_mon.join(name);
+                            if let Ok(meta) = tokio::fs::metadata(&path).await {
+                                total_size += meta.len();
+                            }
+                        }
+                        let mut map = store_mon.write().await;
+                        if let Some(rp) = map.get_mut(&run_id_mon) {
+                            rp.extraction.update(total_size, estimated_fastq_size);
+                            rp.extraction.percent = rp.extraction.percent.min(99.0);
+                            rp.recalculate_overall();
+                        }
+                    }
+                });
+
+                let status = child.wait().await?;
+                extract_monitor.abort();
+
+                if !status.success() {
+                    warn!("⚠️ [{}] fasterq-dump exited with status: {}", run_id, status);
                 }
             }
 
-            // Fault-tolerant compression
-            if (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) ||
-               (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false)) {
+            {
+                let mut map = progress_store.write().await;
+                if let Some(rp) = map.get_mut(&run_id) {
+                    rp.extraction.percent = 100.0;
+                    rp.extraction.bytes_done = rp.extraction.bytes_total;
+                    rp.stage = RunStage::Compressing;
+                    rp.recalculate_overall();
+                }
+            }
 
+            let fq_exists_after = (fq_1.exists() && fq_1.metadata().map(|m| m.len() > 0).unwrap_or(false)) ||
+               (fq_single.exists() && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false));
+
+            if fq_exists_after {
                 info!(target: "download_detail", "📦 [{}] Step 3: Compressing...", run_id);
+
+                let mut fastq_total_size = 0u64;
+                for name in &[
+                    format!("{}.fastq", run_id),
+                    format!("{}_1.fastq", run_id),
+                    format!("{}_2.fastq", run_id),
+                ] {
+                    let path = output_dir.join(name);
+                    if let Ok(meta) = tokio::fs::metadata(&path).await {
+                        fastq_total_size += meta.len();
+                    }
+                }
+
+                let compression_bytes = Arc::new(AtomicU64::new(0));
+                let cb_bytes = compression_bytes.clone();
+                let progress_cb: ebidownload_core::progress_store::CompressionProgressCallback =
+                    Arc::new(move |bytes_read, _total| {
+                        cb_bytes.store(bytes_read, Ordering::Relaxed);
+                    });
+
+                let comp_store = progress_store.clone();
+                let comp_run_id = run_id.clone();
+                let comp_bytes_mon = compression_bytes.clone();
+                let comp_total = fastq_total_size;
+                let comp_monitor = tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(Duration::from_millis(200));
+                    loop {
+                        interval.tick().await;
+                        let done = comp_bytes_mon.load(Ordering::Relaxed);
+                        let mut map = comp_store.write().await;
+                        if let Some(rp) = map.get_mut(&comp_run_id) {
+                            rp.compression.update(done, comp_total);
+                            rp.compression.percent = rp.compression.percent.min(99.0);
+                            rp.recalculate_overall();
+                        }
+                    }
+                });
+
                 let output_dir_compress = output_dir.clone();
                 let run_id_compress = run_id.clone();
                 tokio::task::spawn_blocking(move || {
-                    ebidownload_core::compress_fastq_files(&output_dir_compress, &run_id_compress, process_threads)
+                    ebidownload_core::compress_fastq_files(&output_dir_compress, &run_id_compress, process_threads, Some(progress_cb))
                 })
                 .await
                 .context("Compression task panicked")?
                 .context("Compression failed")?;
+
+                comp_monitor.abort();
+
+                {
+                    let mut map = progress_store.write().await;
+                    if let Some(rp) = map.get_mut(&run_id) {
+                        rp.compression.percent = 100.0;
+                        rp.compression.bytes_done = rp.compression.bytes_total;
+                        rp.overall_percent = 100.0;
+                        rp.stage = RunStage::Completed;
+                    }
+                }
 
                 if cleanup_sra {
                     let sra_path = output_dir.join(&sra_filename);
@@ -824,6 +980,10 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
                 Ok(())
             } else {
                 error!("❌ [{}] Conversion failed and no FASTQ output found.", run_id);
+                let mut map = progress_store.write().await;
+                if let Some(rp) = map.get_mut(&run_id) {
+                    rp.stage = RunStage::Failed;
+                }
                 Err(anyhow::anyhow!("Conversion failed for {}", run_id))
             }
         });
@@ -835,6 +995,17 @@ async fn download_with_aws(records: &[ProcessedRecord], config: &Config, args: &
         if let Err(e) = handle.await { warn!("Task error: {}", e); }
     }
     BARS_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    let gz_files: Vec<PathBuf> = fs::read_dir(&args.output)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "gz"))
+        .collect();
+
+    if !gz_files.is_empty() {
+        generate_md5sum_file(&args.output, &gz_files)?;
+    }
+
     info!("🎉 All AWS S3 tasks completed");
     Ok(())
 }

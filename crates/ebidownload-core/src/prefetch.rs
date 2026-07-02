@@ -108,7 +108,7 @@ pub async fn download_all(
                 let run_id_compress = run_id.clone();
                 let threads_compress = threads;
                 tokio::task::spawn_blocking(move || {
-                    crate::compress_fastq_files(&output_dir_compress, &run_id_compress, threads_compress)
+                    crate::compress_fastq_files(&output_dir_compress, &run_id_compress, threads_compress, None)
                 })
                 .await
                 .context("Compression task panicked")?

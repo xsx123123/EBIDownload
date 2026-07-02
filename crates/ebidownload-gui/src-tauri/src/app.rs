@@ -429,6 +429,7 @@ async fn download_aws(
                     chunk_size,
                     max_workers,
                     None,
+                    None,
                 ).await?
                 .with_progress_bytes(progress_bytes)
                 .with_pause_token(pause_token.clone().unwrap_or_default());
@@ -503,7 +504,7 @@ async fn download_aws(
                 let output_dir_compress = output_dir.clone();
                 let run_id_compress = run_id.clone();
                 tokio::task::spawn_blocking(move || {
-                    crate::compress_fastq_files(&output_dir_compress, &run_id_compress, process_threads)
+                    crate::compress_fastq_files(&output_dir_compress, &run_id_compress, process_threads, None)
                 })
                 .await
                 .context("Compression task panicked")?
