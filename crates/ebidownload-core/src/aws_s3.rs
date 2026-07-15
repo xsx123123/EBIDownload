@@ -313,29 +313,19 @@ impl ResumableDownloader {
         if self.filepath.exists() {
             if let Ok(meta) = tokio::fs::metadata(&self.filepath).await {
                 if meta.len() == self.metadata.size {
-                    let msg = format!(
-                        "   📂 Found existing file with correct size: {}",
+                    info!(
+                        "📂 [{}] Existing file with matching size; verifying integrity...",
                         self.run_id
                     );
-                    if let Some(mp) = &self.mp {
-                        let _ = mp.println(&msg);
-                    } else {
-                        println!("{}", msg);
-                    }
 
                     // Verify integrity
                     if self.verify_integrity(0.0, true).await? {
                         return Ok(true);
                     } else {
-                        let msg = format!(
-                            "   ❌ Integrity check failed for existing file. Redownloading: {}",
+                        warn!(
+                            "❌ [{}] Existing file MD5 mismatch; redownloading...",
                             self.run_id
                         );
-                        if let Some(mp) = &self.mp {
-                            let _ = mp.println(&msg);
-                        } else {
-                            println!("{}", msg);
-                        }
                     }
                 }
             }
@@ -488,7 +478,7 @@ impl ResumableDownloader {
                 Ok(chunk_id) => {
                     downloaded_chunks.insert(chunk_id);
                     if let Err(e) = self.save_progress(&downloaded_chunks) {
-                        eprintln!("Warning: Failed to save progress: {}", e);
+                        warn!("Failed to save progress for {}: {}", self.run_id, e);
                     }
                 }
                 Err(_e) => {}

@@ -9,6 +9,12 @@ For GEO datasets, simply obtain the associated **BioProject ID** (e.g., `PRJNAxx
 
 By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also uses Rust-native parallel gzip compression (via the [`gzp`](https://crates.io/crates/gzp) crate with the `libdeflate` backend), eliminating the need to install external compression tools.
 
+## What's New in v1.4.1
+
+- **Public Data Download**: New `public-data` subcommand to download public reference databases from configured S3 sources.
+- **Colored Terminal Logging**: Logs now use a colorized format (timestamp purple, level auto-colored, module cyan) while log files remain plain text.
+- **Cleaner Progress Messages**: Progress messages are now consistently formatted through `tracing`.
+
 ## What's New in v1.4.0
 
 - **Light / Dark theme toggle**: A new theme button in the GUI header switches between dark and light modes. The choice is persisted across sessions (`localStorage`) and respects the system's `prefers-color-scheme` on first launch.
@@ -809,7 +815,7 @@ md5sum -c md5.txt
 
 ---
 
-**Author**: JZHANG | **Version**: v1.4.0
+**Author**: JZHANG | **Version**: v1.4.1
 
 ## 🔗 Links
 - GitHub: [repository](https://github.com/xsx123123/EBIDownload)

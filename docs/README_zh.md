@@ -147,7 +147,7 @@ software:
     ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝
     ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
 
-              🧬  EMBL-ENA Data Toolkit   |  v1.4.0
+              🧬  EMBL-ENA Data Toolkit   |  v1.4.1
 
 
 Download and upload sequencing data (EBI ENA / NCBI GEO/SRA)

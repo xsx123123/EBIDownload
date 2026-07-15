@@ -1,5 +1,5 @@
-use crate::{Config, ProcessedRecord};
 use crate::progress::{spinner_style, transfer_bar_style};
+use crate::{Config, ProcessedRecord};
 use anyhow::{anyhow, Result};
 use indicatif::{MultiProgress, ProgressBar};
 use std::path::Path;
@@ -10,7 +10,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration}; // 🟢 Import time
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 pub enum Protocol {
     Ftp,
@@ -23,7 +23,10 @@ pub async fn process_downloads(
     _protocol: Protocol,
     threads: usize,
 ) -> Result<()> {
-    info!("🚀 Starting FTP download pipeline with {} threads...", threads);
+    info!(
+        "🚀 Starting FTP download pipeline with {} threads...",
+        threads
+    );
 
     let semaphore = Arc::new(Semaphore::new(threads));
     let mp = Arc::new(MultiProgress::new());
@@ -35,29 +38,34 @@ pub async fn process_downloads(
         filename: String,
         total_size: u64, // 🟢 Added: Total size
     }
-    
+
     let mut tasks = Vec::new();
     for record in records {
         tasks.push(Task {
             url: record.fastq_ftp_1_url.clone(),
-                            md5: record.fastq_md5_1.clone(),
-                        filename: record.fastq_ftp_1_name.clone(),
-                        total_size: record.fastq_bytes_1, // 🟢 Pass size
-                    });
-                    if let (Some(url), Some(md5), Some(name), Some(size)) = (&record.fastq_ftp_2_url, &record.fastq_md5_2, &record.fastq_ftp_2_name, record.fastq_bytes_2) {
-                        tasks.push(Task {
-                            url: url.clone(),
-                            md5: md5.clone(),
-                            filename: name.clone(),
-                            total_size: size, // 🟢 Pass size
-                        });
-                    }
-                }
+            md5: record.fastq_md5_1.clone(),
+            filename: record.fastq_ftp_1_name.clone(),
+            total_size: record.fastq_bytes_1, // 🟢 Pass size
+        });
+        if let (Some(url), Some(md5), Some(name), Some(size)) = (
+            &record.fastq_ftp_2_url,
+            &record.fastq_md5_2,
+            &record.fastq_ftp_2_name,
+            record.fastq_bytes_2,
+        ) {
+            tasks.push(Task {
+                url: url.clone(),
+                md5: md5.clone(),
+                filename: name.clone(),
+                total_size: size, // 🟢 Pass size
+            });
+        }
+    }
     for task in tasks {
         let sem = semaphore.clone();
         let mp = mp.clone();
         let output_dir = output_dir.to_path_buf();
-        
+
         let t_url = task.url.clone();
         let t_md5 = task.md5.clone();
         let t_file = task.filename.clone();
@@ -82,7 +90,7 @@ pub async fn process_downloads(
                 p.set_style(spinner_style());
                 p
             };
-            
+
             pb.set_prefix(t_file.clone());
             pb.enable_steady_tick(Duration::from_millis(120));
 
@@ -92,17 +100,17 @@ pub async fn process_downloads(
             if output_file_path.exists() {
                 // If file exists and size matches (simple check), or MD5 matches
                 if let Ok(meta) = fs::metadata(&output_file_path).await {
-                     if meta.len() == t_size && t_size > 0 {
-                         // Size matches, verify MD5 first
-                         pb.set_message("🔍 Checking existing file...");
-                         if let Ok(true) = verify_md5(&output_file_path, &t_md5).await {
-                             pb.finish_and_clear();
-                             return Ok(());
-                         }
-                     } else if meta.len() > 0 {
-                         // Set current progress before resuming
-                         pb.set_position(meta.len());
-                     }
+                    if meta.len() == t_size && t_size > 0 {
+                        // Size matches, verify MD5 first
+                        pb.set_message("🔍 Checking existing file...");
+                        if let Ok(true) = verify_md5(&output_file_path, &t_md5).await {
+                            pb.finish_and_clear();
+                            return Ok(());
+                        }
+                    } else if meta.len() > 0 {
+                        // Set current progress before resuming
+                        pb.set_position(meta.len());
+                    }
                 }
             }
 
@@ -137,7 +145,10 @@ pub async fn process_downloads(
                     if !out.status.success() {
                         let stderr = String::from_utf8_lossy(&out.stderr);
                         pb.finish_with_message(format!("❌ Failed (Exit {})", out.status));
-                        error!("Command failed: {}\nError: {}", cmd_string_for_script, stderr);
+                        error!(
+                            "Command failed: {}\nError: {}",
+                            cmd_string_for_script, stderr
+                        );
                         return Err(anyhow!("Download failed"));
                     }
                 }
@@ -160,7 +171,10 @@ pub async fn process_downloads(
                 }
                 Ok(false) => {
                     pb.finish_with_message("❌ MD5 Mismatch");
-                    warn!("MD5 Mismatch for {}: expected {}, but check failed.", t_file, t_md5);
+                    warn!(
+                        "MD5 Mismatch for {}: expected {}, but check failed.",
+                        t_file, t_md5
+                    );
                     Err(anyhow!("MD5 mismatch"))
                 }
                 Err(e) => {
@@ -173,21 +187,25 @@ pub async fn process_downloads(
     }
 
     for handle in handles {
-        if let Err(_e) = handle.await { }
+        if let Err(_e) = handle.await {}
     }
-    
+
     mp.clear().ok();
     Ok(())
 }
 
 async fn verify_md5(path: &Path, expected: &str) -> Result<bool> {
-    if !path.exists() { return Ok(false); }
+    if !path.exists() {
+        return Ok(false);
+    }
     let mut file = File::open(path).await?;
     let mut context = md5::Context::new();
     let mut buffer = vec![0; 1024 * 1024 * 4];
     loop {
         let n = file.read(&mut buffer).await?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         context.consume(&buffer[..n]);
     }
     let digest = context.compute();

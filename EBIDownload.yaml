@@ -1,7 +1,7 @@
 # EBIDownload Setting yaml
 software:
-  prefetch : /home/zj/.local/share/mamba/envs/sra/bin/prefetch
-  fasterq_dump : /home/zj/.local/share/mamba/envs/sra/bin/fasterq-dump
+  prefetch : /Users/zhangjian/software/sratoolkit.3.4.1-mac-x86_64/bin/prefetch
+  fasterq_dump : /Users/zhangjian/software/sratoolkit.3.4.1-mac-x86_64/bin/fasterq-dump
 # Public data
 public_data:
   ncbi_nt:
@@ -10,17 +10,75 @@ public_data:
     database_type: folder
     exclude: "*"
     include: "nt.*"
+
   ncbi_nr:
     s3_url: s3://ncbi-blast-databases/2026-07-10-12-55-02/
     description: "NCBI nr database"
     database_type: folder
     exclude: "*"
     include: "nr.*"
+
+  giab:
+    s3_url: s3://giab/
+    description: "Genome in a Bottle (GIAB) benchmark datasets"
+    database_type: folder
+    exclude: "*"
+    include: "*"
+
+  tcga:
+    s3_url: s3://tcga-2-open/
+    description: "The Cancer Genome Atlas (TCGA) open data"
+    database_type: folder
+    exclude: "*"
+    include: "*"
+
+  cptac3:
+    s3_url: s3://gdc-cptac-phs001287-2-open/
+    description: "CPTAC-3 Clinical Proteomic Tumor Analysis Consortium"
+    database_type: folder
+    exclude: "*"
+    include: "*"
+
+  kraken2_standard:
+    s3_url: s3://genome-idx/kraken/k2_standard_20241228.tar.gz
+    description: "Kraken2 standard database (archaea, bacteria, viral, human, UniVec)"
+    database_type: file
+
+  kraken2_pluspf:
+    s3_url: s3://genome-idx/kraken/k2_pluspf_20231009.tar.gz
+    description: "Kraken2 PlusPF (standard + protozoa & fungi)"
+    database_type: file
+
+  kraken2_pluspfp:
+    s3_url: s3://genome-idx/kraken/k2_pluspfp_20231009.tar.gz
+    description: "Kraken2 PlusPFP (standard + protozoa, fungi, plant)"
+    database_type: file
+
+  kraken2_minusb:
+    s3_url: s3://genome-idx/kraken/k2_minusb_20221209.tar.gz
+    description: "Kraken2 MinusB (standard minus bacteria)"
+    database_type: file
+  
   k2_viral:
     s3_url: s3://genome-idx/kraken/k2_viral_20240112.tar.gz
     description: "kraken viral database"
     database_type: file
+
   k2_nt:
     s3_url: s3://genome-idx/kraken/k2_nt_20231129.tar.gz
     description: "kraken nt database"
     database_type: file
+  
+  three_k_rice:
+    s3_url: s3://3kricegenome/
+    description: "3000 Rice Genomes Project (3K RG)"
+    database_type: folder
+    exclude: "*"
+    include: "*"
+  
+  busco_lineages:
+    s3_url: s3://busco-data/
+    description: "BUSCO lineage datasets (archaea, bacteria, eukaryota, virus)"
+    database_type: folder
+    exclude: "*"
+    include: "lineages/*"

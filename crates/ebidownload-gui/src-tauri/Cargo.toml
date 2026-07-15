@@ -1,6 +1,6 @@
 [package]
 name = "ebidownload"
-version = "1.4.0"
+version = "1.4.1"
 description = "EBIDownload - Download sequencing data from EBI and NCBI"
 authors = ["EBIDownload contributors"]
 license = "MIT"

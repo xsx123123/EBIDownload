@@ -2,8 +2,16 @@
 
 ## [Unreleased]
 
-### Fixed
-- **Missing Data Sync Detection**: When ENA/GEO metadata is available but no FASTQ/SRA files are downloadable (e.g., data not yet synced from GEO to SRA/ENA), the tool now reports a clear warning instead of printing "Download completed successfully".
+## [1.4.1] - 2026-07-16
+
+### Added
+- **Public Data Download**: New `public-data` subcommand to download public reference databases (e.g., NCBI BLAST databases, Kraken indices) from configured S3 sources.
+- **Colored Terminal Logging**: Added a custom `tracing-subscriber` formatter that colorizes timestamps, log levels, and module targets while keeping log files free of ANSI escape codes.
+
+### Changed
+- **Cleaner Progress Messages**: Re-routed ad-hoc `println!` / `MultiProgress::println` messages in the AWS S3 downloader through `tracing` for consistent formatting, and removed awkward leading spaces.
+- **Simplified Network Health Warnings**: Removed verbose `(error sending request for url (...): ...)` details from the `NCBI API is NOT reachable!` warning; only the concise warning and DNS/Proxy hint remain.
+- **Version Bump**: Bumped version to `1.4.1` across all crates, the GUI package, and documentation.
 
 ## [1.4.0] - 2026-06-12
 
