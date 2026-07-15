@@ -6,7 +6,7 @@ use indicatif::{MultiProgress, ProgressBar};
 use md5;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use reqwest::{header, Client};
+use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::File;
@@ -306,6 +306,20 @@ impl ResumableDownloader {
         std::fs::write(&self.meta_file, content)?;
         Ok(())
     }
+
+    fn invalidate_download(&self) {
+        for path in [&self.filepath, &self.meta_file] {
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => warn!(
+                    "Failed to remove invalid download {}: {error}",
+                    path.display()
+                ),
+            }
+        }
+    }
+
     pub async fn start(&self) -> Result<bool> {
         let start_time = std::time::Instant::now();
 
@@ -523,6 +537,7 @@ impl ResumableDownloader {
                     "❌ {} │ Size mismatch: local={} remote={}",
                     self.run_id, local_size, self.metadata.size
                 );
+                self.invalidate_download();
                 return Ok(false);
             }
             let _ = std::fs::remove_file(&self.meta_file);
@@ -576,6 +591,7 @@ impl ResumableDownloader {
                 self.run_id, local_md5, expected_md5
             );
             warn!("{}", msg);
+            self.invalidate_download();
             Ok(false)
         }
     }
@@ -610,10 +626,20 @@ async fn download_chunk_http(
             .await;
 
         if let Ok(response) = resp {
-            if !response.status().is_success() {
+            let expected_content_range = format!("bytes {}-{}/", current_offset, chunk.end);
+            let has_expected_range = response
+                .headers()
+                .get(header::CONTENT_RANGE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with(&expected_content_range));
+            if response.status() != StatusCode::PARTIAL_CONTENT || !has_expected_range {
                 retry += 1;
                 if retry > 10 {
-                    return Err(anyhow!("HTTP Status {}", response.status()));
+                    return Err(anyhow!(
+                        "Unexpected HTTP Range response: status={}, content-range={:?}",
+                        response.status(),
+                        response.headers().get(header::CONTENT_RANGE)
+                    ));
                 }
                 tokio::time::sleep(Duration::from_secs(retry)).await;
                 continue;
@@ -697,5 +723,33 @@ mod tests {
             downloader.filepath.file_name().unwrap(),
             "k2_viral_20240112.tar.gz"
         );
+    }
+
+    #[tokio::test]
+    async fn removes_corrupt_file_and_progress_metadata_after_md5_failure() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let downloader = ResumableDownloader::new(
+            "example".to_string(),
+            SraMetadata {
+                s3_uri: "s3://example-bucket/example.dat".to_string(),
+                http_url: "https://example-bucket.s3.amazonaws.com/example.dat".to_string(),
+                md5: Some("d41d8cd98f00b204e9800998ecf8427e".to_string()),
+                size: 3,
+            },
+            temp_dir.path().to_path_buf(),
+            64,
+            1,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        std::fs::write(&downloader.filepath, b"bad").unwrap();
+        std::fs::write(&downloader.meta_file, r#"{"downloaded_chunks":[0]}"#).unwrap();
+
+        assert!(!downloader.verify_integrity(0.0, false).await.unwrap());
+        assert!(!downloader.filepath.exists());
+        assert!(!downloader.meta_file.exists());
     }
 }
