@@ -517,13 +517,14 @@ impl ResumableDownloader {
     ) -> Result<bool> {
         let start_time = std::time::Instant::now();
         if self.metadata.md5.is_none() {
-            let msg = format!("⚠️ {} │ No MD5 info, skipping verification", self.run_id);
-            if let Some(mp) = &self.mp {
-                let _ = mp.println(&msg);
-            } else {
-                println!("{}", msg);
+            let local_size = tokio::fs::metadata(&self.filepath).await?.len();
+            if local_size != self.metadata.size {
+                warn!(
+                    "❌ {} │ Size mismatch: local={} remote={}",
+                    self.run_id, local_size, self.metadata.size
+                );
+                return Ok(false);
             }
-            warn!("{}", msg);
             let _ = std::fs::remove_file(&self.meta_file);
             return Ok(true);
         }

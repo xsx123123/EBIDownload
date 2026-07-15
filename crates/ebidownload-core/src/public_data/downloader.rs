@@ -1,5 +1,6 @@
 use super::{parse_s3_url, s3_url_to_https, should_download_key, DatabaseType, PublicDatabase};
 use crate::aws_s3::{ResumableDownloader, SraMetadata};
+use crate::generate_md5sum_file_at;
 use anyhow::{anyhow, Context, Result};
 use aws_sdk_s3::Client;
 use indicatif::HumanBytes;
@@ -17,6 +18,7 @@ const DEFAULT_CHUNK_SIZE_MB: u64 = 64;
 struct PublicObject {
     key: String,
     size: u64,
+    md5: Option<String>,
 }
 
 /// Coordinates anonymous S3 listing and resumable downloads for public data.
@@ -87,7 +89,8 @@ impl PublicDataDownloader {
                 available.join(", ")
             )
         })?;
-        self.download_database(name, database, output_dir, dry_run).await
+        self.download_database(name, database, output_dir, dry_run)
+            .await
     }
 
     /// Download a configured public database into `output_dir`.
@@ -113,13 +116,19 @@ impl PublicDataDownloader {
                         "Public database '{name}' is type file but does not identify an S3 object"
                     ));
                 }
-                let size = self.head_object_size(&source.bucket, &source.key).await?;
+                let object = self.head_object(&source.bucket, &source.key).await?;
                 if dry_run {
-                    info!("🏜️ Would download s3://{}/{} ({})", source.bucket, source.key, HumanBytes(size));
+                    info!(
+                        "🏜️ Would download s3://{}/{} ({})",
+                        source.bucket,
+                        source.key,
+                        HumanBytes(object.size)
+                    );
                     return Ok(());
                 }
-                self.download_object(&source.bucket, &source.key, size, output_dir)
-                    .await
+                self.download_object(&source.bucket, &object, output_dir)
+                    .await?;
+                self.generate_md5_manifest(output_dir, name, &[object])
             }
             DatabaseType::Folder => {
                 let objects = self
@@ -137,13 +146,14 @@ impl PublicDataDownloader {
                     }
                     return Ok(());
                 }
-                self.download_objects(&source.bucket, objects, output_dir)
-                    .await
+                self.download_objects(&source.bucket, &objects, output_dir)
+                    .await?;
+                self.generate_md5_manifest(output_dir, name, &objects)
             }
         }
     }
 
-    async fn head_object_size(&self, bucket: &str, key: &str) -> Result<u64> {
+    async fn head_object(&self, bucket: &str, key: &str) -> Result<PublicObject> {
         let response = self
             .client
             .head_object()
@@ -155,8 +165,12 @@ impl PublicDataDownloader {
         let size = response
             .content_length()
             .ok_or_else(|| anyhow!("S3 object did not report a size: s3://{bucket}/{key}"))?;
-        u64::try_from(size)
-            .map_err(|_| anyhow!("S3 object has an invalid size: s3://{bucket}/{key}"))
+        Ok(PublicObject {
+            key: key.to_string(),
+            size: u64::try_from(size)
+                .map_err(|_| anyhow!("S3 object has an invalid size: s3://{bucket}/{key}"))?,
+            md5: md5_from_etag(response.e_tag()),
+        })
     }
 
     async fn list_objects(
@@ -203,6 +217,7 @@ impl PublicDataDownloader {
                 objects.push(PublicObject {
                     key: key.to_string(),
                     size,
+                    md5: md5_from_etag(object.e_tag()),
                 });
             }
 
@@ -223,7 +238,7 @@ impl PublicDataDownloader {
     async fn download_objects(
         &self,
         bucket: &str,
-        objects: Vec<PublicObject>,
+        objects: &[PublicObject],
         output_dir: &Path,
     ) -> Result<()> {
         let semaphore = Arc::new(Semaphore::new(self.file_workers));
@@ -234,10 +249,11 @@ impl PublicDataDownloader {
             let bucket = bucket.to_string();
             let output_dir = output_dir.to_path_buf();
             let semaphore = semaphore.clone();
+            let object = object.clone();
             handles.push(tokio::spawn(async move {
                 let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
                 downloader
-                    .download_object(&bucket, &object.key, object.size, &output_dir)
+                    .download_object(&bucket, &object, &output_dir)
                     .await
             }));
         }
@@ -259,18 +275,17 @@ impl PublicDataDownloader {
     async fn download_object(
         &self,
         bucket: &str,
-        key: &str,
-        size: u64,
+        object: &PublicObject,
         output_dir: &Path,
     ) -> Result<()> {
-        let http_url = s3_url_to_https(bucket, key)?;
+        let http_url = s3_url_to_https(bucket, &object.key)?;
         let downloader = ResumableDownloader::new(
-            key.to_string(),
+            object.key.to_string(),
             SraMetadata {
-                s3_uri: format!("s3://{bucket}/{key}"),
+                s3_uri: format!("s3://{bucket}/{}", object.key),
                 http_url,
-                md5: None,
-                size,
+                md5: object.md5.clone(),
+                size: object.size,
             },
             PathBuf::from(output_dir),
             self.chunk_size_mb,
@@ -283,7 +298,57 @@ impl PublicDataDownloader {
         if downloader.start().await? {
             Ok(())
         } else {
-            Err(anyhow!("Download did not complete for s3://{bucket}/{key}"))
+            Err(anyhow!(
+                "Download did not complete for s3://{bucket}/{}",
+                object.key
+            ))
         }
+    }
+
+    fn generate_md5_manifest(
+        &self,
+        output_dir: &Path,
+        database_name: &str,
+        objects: &[PublicObject],
+    ) -> Result<()> {
+        let files = objects
+            .iter()
+            .map(|object| {
+                let filename = object
+                    .key
+                    .rsplit('/')
+                    .next()
+                    .filter(|name| !name.is_empty())
+                    .ok_or_else(|| anyhow!("S3 object key has no filename: {}", object.key))?;
+                Ok(output_dir.join(filename))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let manifest_path = output_dir.join(format!("{database_name}.md5"));
+        generate_md5sum_file_at(&manifest_path, &files)?;
+        Ok(())
+    }
+}
+
+fn md5_from_etag(etag: Option<&str>) -> Option<String> {
+    let value = etag?.trim_matches('"');
+    (value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| value.to_ascii_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::md5_from_etag;
+
+    #[test]
+    fn accepts_only_plain_md5_etags() {
+        assert_eq!(
+            md5_from_etag(Some("\"d41d8cd98f00b204e9800998ecf8427e\"")),
+            Some("d41d8cd98f00b204e9800998ecf8427e".to_string())
+        );
+        assert_eq!(
+            md5_from_etag(Some("d41d8cd98f00b204e9800998ecf8427e-2")),
+            None
+        );
+        assert_eq!(md5_from_etag(None), None);
     }
 }

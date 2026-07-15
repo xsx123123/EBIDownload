@@ -431,7 +431,7 @@ EBIDownload download -A PRJNA1251654 -o ./data -d aws
 
 ## 8. 公共参考数据库下载
 
-`public-data` 从 `EBIDownload.yaml` 的 `public_data` 配置中读取公开 S3 数据库。`folder` 类型会列举并按 `exclude` / `include` 通配符过滤前缀下的对象；`file` 类型下载单个对象。下载使用匿名 S3 列举和 HTTP Range 分片续传，每个目标文件都会保留独立的 `.meta.json` 进度文件，重新运行相同命令即可继续未完成下载。
+`public-data` 从 `EBIDownload.yaml` 的 `public_data` 配置中读取公开 S3 数据库。`folder` 类型会列举并按 `exclude` / `include` 通配符过滤前缀下的对象；`file` 类型下载单个对象。下载使用匿名 S3 列举和 HTTP Range 分片续传，不执行 EBI/NCBI API 健康检查。对于标准 32 位十六进制 S3 ETag，程序会作为 MD5 进行远端一致性校验；其他对象仍执行分片完成和对象大小校验。每个数据库下载完成后会生成 `<数据库标识>.md5`，其中包含该次下载全部文件的 md5sum 兼容校验值；每个目标文件都会保留独立的 `.meta.json` 进度文件，重新运行相同命令即可继续未完成下载。
 
 ```yaml
 public_data:

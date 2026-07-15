@@ -520,7 +520,9 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    check_network_health().await;
+    if !matches!(&cli.command, Commands::PublicData(_)) {
+        check_network_health().await;
+    }
 
     let result: Result<()> = async {
         match &cli.command {
@@ -544,10 +546,11 @@ async fn main() -> ExitCode {
 }
 
 fn default_yaml_path() -> Result<PathBuf> {
-    let executable = std::env::current_exe().context("Failed to locate the EBIDownload executable")?;
-    let directory = executable.parent().ok_or_else(|| {
-        anyhow!("Failed to determine the EBIDownload executable directory")
-    })?;
+    let executable =
+        std::env::current_exe().context("Failed to locate the EBIDownload executable")?;
+    let directory = executable
+        .parent()
+        .ok_or_else(|| anyhow!("Failed to determine the EBIDownload executable directory"))?;
     Ok(directory.join("EBIDownload.yaml"))
 }
 
@@ -557,12 +560,8 @@ fn yaml_path(cli: &Cli) -> Result<PathBuf> {
 
 async fn run_public_data(args: &PublicDataArgs, cli: &Cli) -> Result<()> {
     let yaml_path = yaml_path(cli)?;
-    let config = load_config(&yaml_path).with_context(|| {
-        format!(
-            "Failed to load public data config {}",
-            yaml_path.display()
-        )
-    })?;
+    let config = load_config(&yaml_path)
+        .with_context(|| format!("Failed to load public data config {}", yaml_path.display()))?;
     let downloader = ebidownload_core::public_data::PublicDataDownloader::new()
         .await?
         .with_workers(args.multithreads, args.aws_threads)

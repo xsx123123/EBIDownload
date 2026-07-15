@@ -477,12 +477,16 @@ impl<R: std::io::Read> std::io::Read for CountingReader<R> {
 }
 
 /// Generate md5.txt in md5sum-compatible format: "<md5>  <filename>\n"
-pub fn generate_md5sum_file(output_dir: &Path, gz_files: &[PathBuf]) -> Result<PathBuf> {
-    let md5_path = output_dir.join("md5.txt");
+pub fn generate_md5sum_file(output_dir: &Path, files: &[PathBuf]) -> Result<PathBuf> {
+    generate_md5sum_file_at(&output_dir.join("md5.txt"), files)
+}
+
+/// Generate an md5sum-compatible manifest at the requested path.
+pub fn generate_md5sum_file_at(md5_path: &Path, files: &[PathBuf]) -> Result<PathBuf> {
     let mut file = File::create(&md5_path)?;
 
-    for gz_path in gz_files {
-        let mut f = File::open(gz_path)?;
+    for path in files {
+        let mut f = File::open(path)?;
         let mut ctx = md5::Context::new();
         let mut buf = vec![0u8; 1024 * 1024];
         loop {
@@ -493,12 +497,12 @@ pub fn generate_md5sum_file(output_dir: &Path, gz_files: &[PathBuf]) -> Result<P
             ctx.consume(&buf[..n]);
         }
         let hash = format!("{:x}", ctx.compute());
-        let filename = gz_path.file_name().unwrap().to_string_lossy();
+        let filename = path.file_name().unwrap().to_string_lossy();
         writeln!(file, "{}  {}", hash, filename)?;
     }
 
-    info!("📝 md5.txt generated: {}", md5_path.display());
-    Ok(md5_path)
+    info!("📝 MD5 manifest generated: {}", md5_path.display());
+    Ok(md5_path.to_path_buf())
 }
 
 pub fn validate_config(config: &Config, method: DownloadMethod) -> Result<()> {

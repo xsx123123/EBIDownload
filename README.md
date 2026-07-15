@@ -411,7 +411,7 @@ A circular **theme toggle button** in the top-right corner of the header switche
 | `--dry-run` | List matching objects and sizes without downloading | `false` |
 | `-y`, `--yaml` | Global override for the YAML configuration path | Executable directory |
 
-Folder sources use `exclude` first and then `include` as an override. For example, `exclude: "*"` together with `include: "nt.*"` downloads only `nt.*` objects below the configured S3 prefix. Each object uses its own `.meta.json` file for resumable transfer; it is removed when the download completes.
+Folder sources use `exclude` first and then `include` as an override. For example, `exclude: "*"` together with `include: "nt.*"` downloads only `nt.*` objects below the configured S3 prefix. Plain 32-hex S3 ETags are verified as MD5 values; other object types retain size and completed-range checks. Each completed database also writes `<name>.md5`, an `md5sum`-compatible manifest containing every downloaded file. Each object uses its own `.meta.json` file for resumable transfer; it is removed when the download completes.
 
 #### c. Download Examples
 
