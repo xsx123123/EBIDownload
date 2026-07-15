@@ -3,7 +3,7 @@ use crate::aws_s3::{ResumableDownloader, SraMetadata};
 use crate::generate_md5sum_file_at;
 use anyhow::{anyhow, Context, Result};
 use aws_sdk_s3::Client;
-use indicatif::HumanBytes;
+use indicatif::{HumanBytes, MultiProgress};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -28,6 +28,7 @@ pub struct PublicDataDownloader {
     file_workers: usize,
     inner_workers: usize,
     chunk_size_mb: u64,
+    progress: Arc<MultiProgress>,
 }
 
 impl PublicDataDownloader {
@@ -44,6 +45,7 @@ impl PublicDataDownloader {
             file_workers: DEFAULT_FILE_WORKERS,
             inner_workers: DEFAULT_INNER_WORKERS,
             chunk_size_mb: DEFAULT_CHUNK_SIZE_MB,
+            progress: Arc::new(MultiProgress::new()),
         })
     }
 
@@ -57,6 +59,12 @@ impl PublicDataDownloader {
     /// Override the HTTP range chunk size in MiB.
     pub fn with_chunk_size_mb(mut self, chunk_size_mb: u64) -> Self {
         self.chunk_size_mb = chunk_size_mb.max(1);
+        self
+    }
+
+    /// Use a caller-owned progress renderer for all concurrent file downloads.
+    pub fn with_progress(mut self, progress: Arc<MultiProgress>) -> Self {
+        self.progress = progress;
         self
     }
 
@@ -290,7 +298,7 @@ impl PublicDataDownloader {
             PathBuf::from(output_dir),
             self.chunk_size_mb,
             self.inner_workers,
-            None,
+            Some(self.progress.clone()),
             None,
         )
         .await?;

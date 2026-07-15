@@ -565,10 +565,18 @@ async fn run_public_data(args: &PublicDataArgs, cli: &Cli) -> Result<()> {
     let downloader = ebidownload_core::public_data::PublicDataDownloader::new()
         .await?
         .with_workers(args.multithreads, args.aws_threads)
-        .with_chunk_size_mb(args.chunk_size);
-    downloader
+        .with_chunk_size_mb(args.chunk_size)
+        .with_progress(Arc::new(GLOBAL_MP.clone()));
+
+    if !args.dry_run {
+        BARS_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    let result = downloader
         .download_named(&config.public_data, &args.name, &args.output, args.dry_run)
-        .await?;
+        .await;
+    BARS_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    result?;
+
     info!("🎉 Public data download completed successfully!");
     Ok(())
 }
