@@ -16,7 +16,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    # Only build the core library and CLI binary. The Tauri GUI crate
+    # (crates/ebidownload-gui/src-tauri) requires GTK/webkit2gtk system libs
+    # and a prebuilt frontend (../dist) that are not available in this job;
+    # it is built separately on platforms with the proper Tauri prerequisites.
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose -p ebidownload-core -p ebidownload-cli
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose -p ebidownload-core -p ebidownload-cli
