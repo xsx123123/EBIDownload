@@ -112,7 +112,7 @@ enum Commands {
     Download(DownloadArgs),
     /// Download public reference databases configured in YAML from S3
     PublicData(PublicDataArgs),
-    /// 使用 blastdbcmd 校验已有的 BLAST 数据库目录
+    /// Validate an existing BLAST database directory with blastdbcmd
     Validate(ValidateArgs),
     /// Upload sequencing data to AWS S3 for NCBI SRA submission
     Upload(UploadArgs),
@@ -290,22 +290,22 @@ struct ValidateArgs {
     #[arg(
         short = 'd',
         long,
-        value_name = "目录",
-        help = "包含 BLAST 分卷文件的目录"
+        value_name = "DIR",
+        help = "Directory containing the BLAST database volumes"
     )]
     dir: PathBuf,
     #[arg(
         short = 't',
         long,
-        value_name = "类型",
-        help = "BLAST 数据库类型: nucl (核酸) 或 prot (蛋白)"
+        value_name = "TYPE",
+        help = "BLAST database type: nucl or prot"
     )]
     dbtype: String,
     #[arg(
         short = 'T',
         long,
-        value_name = "可执行文件",
-        help = "blastdbcmd 可执行文件路径（覆盖 YAML 中的 software.blastdbcmd）"
+        value_name = "FILE",
+        help = "Path to blastdbcmd executable (overrides software.blastdbcmd in YAML)"
     )]
     tool: Option<PathBuf>,
 }
@@ -725,19 +725,19 @@ async fn run_validate(args: &ValidateArgs, cli: &Cli) -> Result<()> {
     } else {
         let yaml_path = yaml_path(cli)?;
         let config = load_config(&yaml_path)
-            .with_context(|| format!("加载配置 {} 失败", yaml_path.display()))?;
+            .with_context(|| format!("Failed to load config {}", yaml_path.display()))?;
         config
             .software
             .blastdbcmd
-            .ok_or_else(|| anyhow!("未提供 --tool，且 YAML 中 software.blastdbcmd 未配置"))?
+            .ok_or_else(|| anyhow!("--tool not provided and software.blastdbcmd is not configured"))?
     };
 
     if !tool_path.exists() {
-        return Err(anyhow!("blastdbcmd 不存在: {}", tool_path.display()));
+        return Err(anyhow!("blastdbcmd not found at {}", tool_path.display()));
     }
 
     if !args.dir.exists() {
-        return Err(anyhow!("数据库目录 {} 不存在", args.dir.display()));
+        return Err(anyhow!("Database directory {} does not exist", args.dir.display()));
     }
 
     BARS_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -753,12 +753,12 @@ async fn run_validate(args: &ValidateArgs, cli: &Cli) -> Result<()> {
     let (passed, failed) = result?;
     if failed > 0 {
         eprintln!(
-            "\n❌ 校验完成: ✅ {} 个分卷通过 | ❌ {} 个分卷损坏",
+            "\n❌ Validation finished: ✅ {} passed | ❌ {} corrupted",
             passed, failed
         );
-        return Err(anyhow!("{} 个分卷校验失败", failed));
+        return Err(anyhow!("{} volumes failed validation", failed));
     }
-    eprintln!("\n✅ 校验完成: ✅ {} 个分卷通过 | ❌ {} 个分卷损坏", passed, failed);
+    eprintln!("\n✅ Validation finished: ✅ {} passed | ❌ {} corrupted", passed, failed);
     Ok(())
 }
 

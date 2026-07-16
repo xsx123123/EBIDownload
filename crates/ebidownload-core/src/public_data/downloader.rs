@@ -205,15 +205,15 @@ impl PublicDataDownloader {
                     let cfg = database.validate.as_ref().unwrap();
                     if cfg.tool != "blastdbcmd" {
                         return Err(anyhow!(
-                            "公共数据库 '{}' 配置了不支持的校验工具 '{}'",
-                            name, cfg.tool
+                            "Unsupported validation tool '{}' for public database '{}'",
+                            cfg.tool, name
                         ));
                     }
                     let path = software_paths
                         .and_then(|sp| sp.blastdbcmd.as_ref())
                         .ok_or_else(|| {
                             anyhow!(
-                                "'{}' 已启用校验，但 YAML 中 software.blastdbcmd 未配置",
+                                "Validation is enabled for '{}' but software.blastdbcmd is not configured",
                                 name
                             )
                         })?;
@@ -388,7 +388,7 @@ impl PublicDataDownloader {
 
             if let Some(cfg) = validate_cfg {
                 let tool = tool_path.ok_or_else(|| {
-                    anyhow!("分卷 {} 缺少校验工具路径", volume.name)
+                    anyhow!("Validation tool path missing for volume {}", volume.name)
                 })?;
 
                 let spinner = self.progress.add(ProgressBar::new_spinner());
@@ -414,7 +414,7 @@ impl PublicDataDownloader {
                         attempts += 1;
                         if attempts >= max_attempts {
                             return Err(anyhow!(
-                                "分卷 {} 经过 {} 次重试后仍校验失败",
+                                "Volume {} failed validation after {} retries",
                                 volume.name,
                                 cfg.max_retries
                             ));

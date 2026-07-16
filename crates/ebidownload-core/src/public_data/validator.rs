@@ -1,9 +1,9 @@
-//! 使用 `blastdbcmd` 校验 BLAST 数据库分卷。
+//! BLAST database volume validation using `blastdbcmd`.
 //!
-//! BLAST 数据库以多分卷形式分发，每个分卷共享同一个文件名前缀，并
-//! 由多个文件组成（`.phr`、`.psq`、`.pin` ...）。当某个分卷的所有文件
-//! 都下载到本地后，对该前缀执行 `blastdbcmd -info` 来验证该分卷是否
-//! 可以正常打开。
+//! A BLAST database is shipped as a set of volumes. Each volume shares a
+//! common prefix and is made of several files (`.phr`, `.psq`, `.pin`, ...).
+//! After all files of a volume are present locally, `blastdbcmd -info` is run
+//! on the prefix to verify the volume can be opened.
 
 use std::path::Path;
 
@@ -12,7 +12,7 @@ use indicatif::{MultiProgress, ProgressBar};
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 
-/// 单个 BLAST 分卷可能包含的文件后缀。
+/// File extensions that may belong to a single BLAST database volume.
 const BLAST_VOLUME_EXTENSIONS: &[&str] = &[
     "phr", "psq", "pin", "pog", "pni", "pnd", "psi", "psd", "aln", "freq",
 ];
@@ -21,11 +21,10 @@ const GREEN: &str = "\x1b[32m";
 const RED_BOLD: &str = "\x1b[1;31m";
 const RESET: &str = "\x1b[0m";
 
-/// 执行 `blastdbcmd -db <volume_prefix> -dbtype <dbtype> -info`。
+/// Run `blastdbcmd -db <volume_prefix> -dbtype <dbtype> -info`.
 ///
-/// - 命令成功退出 → `Ok(true)`
-/// - 命令报告分卷损坏/无效 → `Ok(false)`
-/// - 工具或 I/O 出错 → `Err(...)`
+/// Returns `Ok(true)` when the command exits successfully, `Ok(false)` when it
+/// reports a corrupted/invalid volume, and `Err(...)` for I/O or tool errors.
 pub async fn validate_blast_volume(
     volume_prefix: &Path,
     dbtype: &str,
@@ -33,7 +32,7 @@ pub async fn validate_blast_volume(
 ) -> Result<bool> {
     let prefix_str = volume_prefix
         .to_str()
-        .ok_or_else(|| anyhow!("无效的分卷路径前缀: {}", volume_prefix.display()))?;
+        .ok_or_else(|| anyhow!("Invalid volume prefix path: {}", volume_prefix.display()))?;
 
     let output = Command::new(tool_path)
         .arg("-db")
@@ -45,7 +44,7 @@ pub async fn validate_blast_volume(
         .await
         .with_context(|| {
             format!(
-                "运行 blastdbcmd 校验 {} 失败",
+                "Failed to run blastdbcmd for volume {}",
                 volume_prefix.display()
             )
         })?;
@@ -53,23 +52,23 @@ pub async fn validate_blast_volume(
     Ok(output.status.success())
 }
 
-/// 删除指定 BLAST 分卷前缀对应的所有已知文件。
+/// Delete all known files for a BLAST volume identified by its prefix.
 pub async fn delete_volume_files(volume_prefix: &Path) -> Result<()> {
     for ext in BLAST_VOLUME_EXTENSIONS {
         let path = volume_prefix.with_extension(ext);
         if path.exists() {
             tokio::fs::remove_file(&path)
                 .await
-                .with_context(|| format!("删除 {} 失败", path.display()))?;
+                .with_context(|| format!("Failed to remove {}", path.display()))?;
         }
     }
     Ok(())
 }
 
-/// 遍历 `db_dir` 下所有 `.phr` 文件，作为 BLAST 分卷前缀批量校验。
+/// Validate every `.phr` file in `db_dir` as a BLAST volume prefix.
 ///
-/// 返回 `(通过数, 损坏数)`。进度和结果通过 `progress` 渲染，避免破坏
-/// 已有的 indicatif 进度条布局。
+/// Returns `(passed, failed)` counts. Progress and results are rendered via
+/// `progress` so they do not corrupt active indicatif bars.
 pub async fn validate_all_volumes(
     db_dir: &Path,
     dbtype: &str,
@@ -78,7 +77,7 @@ pub async fn validate_all_volumes(
 ) -> Result<(usize, usize)> {
     let mut entries = tokio::fs::read_dir(db_dir)
         .await
-        .with_context(|| format!("读取目录 {} 失败", db_dir.display()))?;
+        .with_context(|| format!("Failed to read directory {}", db_dir.display()))?;
 
     let mut phr_files = Vec::new();
     while let Some(entry) = entries.next_entry().await? {
@@ -101,27 +100,27 @@ pub async fn validate_all_volumes(
             .to_string();
 
         let spinner = progress.add(ProgressBar::new_spinner());
-        spinner.set_message(format!("⏳ 校验 {}...", name));
+        spinner.set_message(format!("validating {}...", name));
         spinner.enable_steady_tick(Duration::from_millis(100));
 
         match validate_blast_volume(&prefix, dbtype, tool_path).await {
             Ok(true) => {
                 spinner.finish_with_message(format!(
-                    "{GREEN}  ✅  {:<8} 校验通过{RESET}",
+                    "{GREEN}  ✅  {:<8} validated{RESET}",
                     name
                 ));
                 passed += 1;
             }
             Ok(false) => {
                 spinner.abandon_with_message(format!(
-                    "{RED_BOLD}  ❌  {:<8} 分卷已损坏  ❌{RESET}",
+                    "{RED_BOLD}  ❌  {:<8} corrupted ❌{RESET}",
                     name
                 ));
                 failed += 1;
             }
             Err(e) => {
                 spinner.abandon_with_message(format!(
-                    "{RED_BOLD}  ❌  {:<8} 校验出错: {} ❌{RESET}",
+                    "{RED_BOLD}  ❌  {:<8} validation error: {} ❌{RESET}",
                     name, e
                 ));
                 failed += 1;
@@ -132,10 +131,10 @@ pub async fn validate_all_volumes(
     Ok((passed, failed))
 }
 
-/// 对单个分卷执行校验，失败时自动重试并重新下载。
+/// Validate a single volume with retries and automatic re-download on failure.
 ///
-/// `download_fn` 在每次重试前被调用，用于重新获取该分卷文件。
-/// `progress` 用于向终端输出状态，不破坏 indicatif 布局。
+/// `download_fn` is called for each retry attempt after corrupted files have
+/// been removed. `progress` is used for user-facing status messages.
 #[allow(clippy::too_many_arguments)]
 pub async fn validate_volume_with_retry<F, Fut>(
     volume_prefix: &Path,
@@ -157,31 +156,31 @@ where
         download_fn().await?;
 
         let spinner = progress.add(ProgressBar::new_spinner());
-        spinner.set_message(format!("⏳ 校验 {}...", volume_name));
+        spinner.set_message(format!("validating {}...", volume_name));
         spinner.enable_steady_tick(Duration::from_millis(100));
 
         match validate_blast_volume(volume_prefix, dbtype, tool_path).await? {
             true => {
                 spinner.finish_with_message(format!(
-                    "{GREEN}  ✅  {:<8} 校验通过{RESET}",
+                    "{GREEN}  ✅  {:<8} validated{RESET}",
                     volume_name
                 ));
                 return Ok(());
             }
             false => {
                 spinner.abandon_with_message(format!(
-                    "{RED_BOLD}  ❌  {:<8} 分卷已损坏  ❌{RESET}",
+                    "{RED_BOLD}  ❌  {:<8} corrupted ❌{RESET}",
                     volume_name
                 ));
                 attempts += 1;
                 if attempts > max_retries {
                     return Err(anyhow!(
-                        "分卷 {} 经过 {} 次重试后仍校验失败",
+                        "Volume {} failed validation after {} retries",
                         volume_name, max_retries
                     ));
                 }
                 progress.println(format!(
-                    "🔄 {} 校验失败 ({}/{}), {} 秒后重新下载",
+                    "🔄 {} validation failed ({}/{}), re-downloading in {}s",
                     volume_name, attempts, max_retries, retry_delay_seconds
                 ))?;
                 sleep(Duration::from_secs(retry_delay_seconds)).await;
