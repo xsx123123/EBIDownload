@@ -368,7 +368,10 @@ impl ResumableDownloader {
 
         // 🟢 Setup Progress Bar
         let pb = if let Some(mp) = &self.mp {
-            mp.add(ProgressBar::new(self.metadata.size))
+            // insert_from_back(1) places the bar just above the pinned global
+            // status bar (which lives at the very back of the MultiProgress),
+            // so transient per-file bars never sink below it.
+            mp.insert_from_back(1, ProgressBar::new(self.metadata.size))
         } else {
             ProgressBar::new(self.metadata.size)
         };
@@ -535,7 +538,7 @@ impl ResumableDownloader {
         }
 
         let pb = if let Some(mp) = &self.mp {
-            mp.add(ProgressBar::new(self.metadata.size))
+            mp.insert_from_back(1, ProgressBar::new(self.metadata.size))
         } else {
             ProgressBar::new(self.metadata.size)
         };

@@ -25,9 +25,12 @@ use tracing_subscriber::{fmt, EnvFilter};
 use ebidownload_core::progress_store::{
     new_progress_store, ProgressStore, RunProgress, RunStage, StageProgress,
 };
+use ebidownload_core::observer::DownloadObserver;
 use ebidownload_core::*;
 
 mod http_server;
+mod ui_manager;
+use ui_manager::{Mode, UiManager};
 
 const VERSION: &str = "1.4.1";
 const SCRIPT_NAME: &str = "EBIDownload";
@@ -639,19 +642,38 @@ async fn run_public_data(args: &PublicDataArgs, cli: &Cli) -> Result<()> {
     let yaml_path = yaml_path(cli)?;
     let config = load_config(&yaml_path)
         .with_context(|| format!("Failed to load public data config {}", yaml_path.display()))?;
+
+    // Start the global status bar (pinned at the bottom of GLOBAL_MP). For
+    // public-data the total item count is filled in later by the downloader
+    // via DownloadObserver::set_total.
+    let ui = if !args.dry_run {
+        Some(UiManager::start(GLOBAL_MP.clone(), Mode::PublicData, 0))
+    } else {
+        None
+    };
+
     let downloader = ebidownload_core::public_data::PublicDataDownloader::new()
         .await?
         .with_workers(args.multithreads, args.aws_threads)
         .with_chunk_size_mb(args.chunk_size)
         .with_progress(Arc::new(GLOBAL_MP.clone()));
 
-    if !args.dry_run {
+    let downloader = if let Some(ui) = &ui {
+        downloader.with_observer(ui.clone() as Arc<dyn DownloadObserver>)
+    } else {
+        downloader
+    };
+
+    if ui.is_some() {
         BARS_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     let result = downloader
         .download_named(&config.public_data, &args.name, &args.output, args.dry_run)
         .await;
     BARS_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    if let Some(ui) = ui {
+        ui.stop();
+    }
     result?;
 
     info!("🎉 Public data download completed successfully!");
@@ -1174,6 +1196,13 @@ async fn download_with_aws(
 
     let semaphore = Arc::new(Semaphore::new(file_concurrency));
     let mp = Arc::new(GLOBAL_MP.clone());
+    let ui = UiManager::start(
+        GLOBAL_MP.clone(),
+        Mode::Sra {
+            store: progress_store.clone(),
+        },
+        records.len() as u64,
+    );
     BARS_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
     let mut handles = Vec::new();
 
@@ -1184,6 +1213,7 @@ async fn download_with_aws(
         let output_dir = args.output.clone();
         let sem = semaphore.clone();
         let mp = mp.clone();
+        let ui = ui.clone();
         let max_workers = chunk_concurrency;
         let chunk_size = chunk_size_mb;
         let fasterq_dump = fasterq_dump_path.clone();
@@ -1206,6 +1236,9 @@ async fn download_with_aws(
             info!(target: "download_detail", "📥 [{}] Step 1: Downloading via AWS S3...", run_id);
 
             if let Some(sra_metadata) = metadata {
+                // Share the per-file byte counter with the status bar so the
+                // global speed aggregates this run while downloading.
+                let counter = ui.register(&run_id, sra_size);
                 let downloader = ebidownload_core::aws_s3::ResumableDownloader::new(
                     run_id.clone(),
                     sra_metadata,
@@ -1215,9 +1248,13 @@ async fn download_with_aws(
                     Some(mp),
                     Some(progress_store.clone()),
                 )
-                .await?;
+                .await?
+                .with_progress_bytes(counter);
 
                 let success = downloader.start().await?;
+                // Download phase done — drop it from the live speed set. Counts
+                // (active/completed/failed) come from progress_store in SRA mode.
+                ui.unregister(&run_id);
                 if !success {
                     let mut map = progress_store.write().await;
                     if let Some(rp) = map.get_mut(&run_id) {
@@ -1422,6 +1459,7 @@ async fn download_with_aws(
         }
     }
     BARS_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    ui.stop();
 
     let gz_files: Vec<PathBuf> = fs::read_dir(&args.output)?
         .filter_map(|e| e.ok())

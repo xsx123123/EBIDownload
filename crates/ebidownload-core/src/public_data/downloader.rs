@@ -1,6 +1,7 @@
 use super::{parse_s3_url, s3_url_to_https, should_download_key, DatabaseType, PublicDatabase};
 use crate::aws_s3::{ResumableDownloader, SraMetadata};
 use crate::generate_md5sum_file_at;
+use crate::observer::{CompletedInfo, DownloadObserver};
 use anyhow::{anyhow, Context, Result};
 use aws_sdk_s3::Client;
 use indicatif::{HumanBytes, MultiProgress};
@@ -29,6 +30,7 @@ pub struct PublicDataDownloader {
     inner_workers: usize,
     chunk_size_mb: u64,
     progress: Arc<MultiProgress>,
+    observer: Option<Arc<dyn DownloadObserver>>,
 }
 
 impl PublicDataDownloader {
@@ -46,6 +48,7 @@ impl PublicDataDownloader {
             inner_workers: DEFAULT_INNER_WORKERS,
             chunk_size_mb: DEFAULT_CHUNK_SIZE_MB,
             progress: Arc::new(MultiProgress::new()),
+            observer: None,
         })
     }
 
@@ -65,6 +68,13 @@ impl PublicDataDownloader {
     /// Use a caller-owned progress renderer for all concurrent file downloads.
     pub fn with_progress(mut self, progress: Arc<MultiProgress>) -> Self {
         self.progress = progress;
+        self
+    }
+
+    /// Attach a UI observer to receive download lifecycle events and share live
+    /// byte counters (for the global status bar). Optional — omitted by default.
+    pub fn with_observer(mut self, observer: Arc<dyn DownloadObserver>) -> Self {
+        self.observer = Some(observer);
         self
     }
 
@@ -249,6 +259,9 @@ impl PublicDataDownloader {
         objects: &[PublicObject],
         output_dir: &Path,
     ) -> Result<()> {
+        if let Some(observer) = &self.observer {
+            observer.set_total(objects.len() as u64);
+        }
         let semaphore = Arc::new(Semaphore::new(self.file_workers));
         let mut handles = Vec::with_capacity(objects.len());
 
@@ -287,7 +300,17 @@ impl PublicDataDownloader {
         output_dir: &Path,
     ) -> Result<()> {
         let http_url = s3_url_to_https(bucket, &object.key)?;
-        let downloader = ResumableDownloader::new(
+        let start = std::time::Instant::now();
+
+        // Register this download with the UI observer (if any) and surface the
+        // shared byte counter to the resumable downloader so the status bar can
+        // track live speed.
+        let counter = self
+            .observer
+            .as_ref()
+            .map(|observer| observer.register(&object.key, object.size));
+
+        let mut downloader = ResumableDownloader::new(
             object.key.to_string(),
             SraMetadata {
                 s3_uri: format!("s3://{bucket}/{}", object.key),
@@ -303,7 +326,31 @@ impl PublicDataDownloader {
         )
         .await?;
 
-        if downloader.start().await? {
+        if let Some(counter) = counter {
+            downloader = downloader.with_progress_bytes(counter);
+        }
+
+        let outcome = downloader.start().await;
+
+        // Report lifecycle to the observer regardless of outcome so the active
+        // counter is always drained from the live set.
+        if let Some(observer) = &self.observer {
+            observer.unregister(&object.key);
+            match &outcome {
+                Ok(true) => {
+                    let elapsed = start.elapsed().as_secs_f64();
+                    observer.complete(CompletedInfo {
+                        id: object.key.clone(),
+                        total_bytes: object.size,
+                        elapsed_secs: elapsed,
+                        avg_speed_bps: object.size as f64 / elapsed.max(0.001),
+                    });
+                }
+                _ => observer.fail(&object.key),
+            }
+        }
+
+        if outcome? {
             Ok(())
         } else {
             Err(anyhow!(
