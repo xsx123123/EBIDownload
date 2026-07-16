@@ -19,7 +19,7 @@ public_data:
       retry_delay_seconds: 10
 
   ncbi_nr:
-    s3_url: s3://ncbi-blast-databases/2026-07-10-12-55-02/
+    s3_url: s3://ncbi-blast-databases/2026-06-16-01-05-01/
     description: "NCBI nr database"
     database_type: folder
     exclude: "*"
