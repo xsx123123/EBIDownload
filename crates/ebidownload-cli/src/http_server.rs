@@ -65,7 +65,7 @@ async fn handle_progress(State(state): State<Arc<HttpState>>) -> impl IntoRespon
         StatusCode::OK,
         Json(serde_json::json!({
             "ciphertext": general_purpose::STANDARD.encode(&ciphertext),
-            "nonce": general_purpose::STANDARD.encode(&nonce_bytes),
+            "nonce": general_purpose::STANDARD.encode(nonce_bytes),
         })),
     )
 }

@@ -112,6 +112,8 @@ enum Commands {
     Download(DownloadArgs),
     /// Download public reference databases configured in YAML from S3
     PublicData(PublicDataArgs),
+    /// Validate an existing BLAST database directory with blastdbcmd
+    Validate(ValidateArgs),
     /// Upload sequencing data to AWS S3 for NCBI SRA submission
     Upload(UploadArgs),
     /// Manage external dependencies (sra-tools)
@@ -280,6 +282,32 @@ struct PublicDataArgs {
         help_heading = "Advanced Options"
     )]
     dry_run: bool,
+}
+
+#[derive(Parser, Debug)]
+#[command(arg_required_else_help = true)]
+struct ValidateArgs {
+    #[arg(
+        short = 'd',
+        long,
+        value_name = "DIR",
+        help = "Directory containing the BLAST database volumes"
+    )]
+    dir: PathBuf,
+    #[arg(
+        short = 't',
+        long,
+        value_name = "TYPE",
+        help = "BLAST database type: nucl or prot"
+    )]
+    dbtype: String,
+    #[arg(
+        short = 'T',
+        long,
+        value_name = "FILE",
+        help = "Path to blastdbcmd executable (overrides software.blastdbcmd in YAML)"
+    )]
+    tool: Option<PathBuf>,
 }
 
 // ============================================================
@@ -570,12 +598,14 @@ async fn main() -> ExitCode {
     let output_dir = match &cli.command {
         Commands::Download(args) => args.output.clone(),
         Commands::PublicData(args) => args.output.clone(),
+        Commands::Validate(args) => args.dir.clone(),
         Commands::Upload(_) | Commands::Deps(_) => PathBuf::from("."),
     };
 
     let download_output = match &cli.command {
         Commands::Download(args) => Some(&args.output),
         Commands::PublicData(args) => Some(&args.output),
+        Commands::Validate(args) => Some(&args.dir),
         Commands::Upload(_) | Commands::Deps(_) => None,
     };
     if let Some(output) = download_output {
@@ -593,14 +623,16 @@ async fn main() -> ExitCode {
         &cli.log_format,
         match &cli.command {
             Commands::Download(args) => args.accession.as_deref(),
-            Commands::PublicData(_) | Commands::Upload(_) | Commands::Deps(_) => None,
+            Commands::PublicData(_) | Commands::Validate(_) | Commands::Upload(_) | Commands::Deps(_) => None,
         },
     ) {
         eprintln!("❌ Failed to setup logging: {}", e);
         return ExitCode::FAILURE;
     }
 
-    if !matches!(&cli.command, Commands::PublicData(_)) {
+    if !matches!(&cli.command,
+        Commands::PublicData(_) | Commands::Validate(_)
+    ) {
         check_network_health().await;
     }
 
@@ -608,6 +640,7 @@ async fn main() -> ExitCode {
         match &cli.command {
             Commands::Download(args) => run_download(args, &cli).await,
             Commands::PublicData(args) => run_public_data(args, &cli).await,
+            Commands::Validate(args) => run_validate(args, &cli).await,
             Commands::Upload(args) => run_upload(args).await,
             Commands::Deps(args) => run_deps(args, &cli).await,
         }
@@ -668,7 +701,13 @@ async fn run_public_data(args: &PublicDataArgs, cli: &Cli) -> Result<()> {
         BARS_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     let result = downloader
-        .download_named(&config.public_data, &args.name, &args.output, args.dry_run)
+        .download_named(
+            &config.public_data,
+            &args.name,
+            &args.output,
+            args.dry_run,
+            Some(&config.software),
+        )
         .await;
     BARS_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some(ui) = ui {
@@ -677,6 +716,49 @@ async fn run_public_data(args: &PublicDataArgs, cli: &Cli) -> Result<()> {
     result?;
 
     info!("🎉 Public data download completed successfully!");
+    Ok(())
+}
+
+async fn run_validate(args: &ValidateArgs, cli: &Cli) -> Result<()> {
+    let tool_path = if let Some(tool) = &args.tool {
+        tool.clone()
+    } else {
+        let yaml_path = yaml_path(cli)?;
+        let config = load_config(&yaml_path)
+            .with_context(|| format!("Failed to load config {}", yaml_path.display()))?;
+        config
+            .software
+            .blastdbcmd
+            .ok_or_else(|| anyhow!("--tool not provided and software.blastdbcmd is not configured"))?
+    };
+
+    if !tool_path.exists() {
+        return Err(anyhow!("blastdbcmd not found at {}", tool_path.display()));
+    }
+
+    if !args.dir.exists() {
+        return Err(anyhow!("Database directory {} does not exist", args.dir.display()));
+    }
+
+    BARS_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
+    let result = ebidownload_core::public_data::validator::validate_all_volumes(
+        &args.dir,
+        &args.dbtype,
+        &tool_path,
+        &GLOBAL_MP,
+    )
+    .await;
+    BARS_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    let (passed, failed) = result?;
+    if failed > 0 {
+        eprintln!(
+            "\n❌ Validation finished: ✅ {} passed | ❌ {} corrupted",
+            passed, failed
+        );
+        return Err(anyhow!("{} volumes failed validation", failed));
+    }
+    eprintln!("\n✅ Validation finished: ✅ {} passed | ❌ {} corrupted", passed, failed);
     Ok(())
 }
 

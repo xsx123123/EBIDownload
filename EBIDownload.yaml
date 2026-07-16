@@ -2,6 +2,7 @@
 software:
   prefetch : /home/zj/.local/share/mamba/envs/EBIDownload/bin/prefetch
   fasterq_dump : /home/zj/.local/share/mamba/envs/EBIDownload/bin/fasterq-dump
+  blastdbcmd : /home/zj/software/ncbi-blast-2.17.0+/bin/blastdbcmd
 # Public data
 public_data:
   ncbi_nt:
@@ -10,6 +11,12 @@ public_data:
     database_type: folder
     exclude: "*"
     include: "nt.*"
+    validate:
+      enabled: true
+      tool: blastdbcmd
+      dbtype: nucl
+      max_retries: 2
+      retry_delay_seconds: 10
 
   ncbi_nr:
     s3_url: s3://ncbi-blast-databases/2026-07-10-12-55-02/
@@ -17,6 +24,12 @@ public_data:
     database_type: folder
     exclude: "*"
     include: "nr.*"
+    validate:
+      enabled: true
+      tool: blastdbcmd
+      dbtype: prot
+      max_retries: 2
+      retry_delay_seconds: 10
 
   giab:
     s3_url: s3://giab/

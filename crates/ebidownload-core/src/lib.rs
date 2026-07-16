@@ -32,6 +32,7 @@ pub struct Config {
 pub struct SoftwarePaths {
     pub prefetch: PathBuf,
     pub fasterq_dump: PathBuf,
+    pub blastdbcmd: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -484,7 +485,7 @@ pub fn generate_md5sum_file(output_dir: &Path, files: &[PathBuf]) -> Result<Path
 
 /// Generate an md5sum-compatible manifest at the requested path.
 pub fn generate_md5sum_file_at(md5_path: &Path, files: &[PathBuf]) -> Result<PathBuf> {
-    let mut file = File::create(&md5_path)?;
+    let mut file = File::create(md5_path)?;
 
     for path in files {
         let mut f = File::open(path)?;

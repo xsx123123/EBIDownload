@@ -196,6 +196,7 @@ fn find_sra_tools_in_dir(dir: &Path) -> Option<SoftwarePaths> {
     Some(SoftwarePaths {
         prefetch,
         fasterq_dump,
+        blastdbcmd: None,
     })
 }
 
@@ -236,6 +237,7 @@ pub fn find_sra_tools_in_path() -> Option<SoftwarePaths> {
     Some(SoftwarePaths {
         prefetch,
         fasterq_dump,
+        blastdbcmd: None,
     })
 }
 
@@ -499,6 +501,7 @@ pub fn write_software_paths_to_yaml(yaml_path: &Path, paths: &SoftwarePaths) -> 
             software: SoftwarePaths {
                 prefetch: paths.prefetch.clone(),
                 fasterq_dump: paths.fasterq_dump.clone(),
+                blastdbcmd: paths.blastdbcmd.clone(),
             },
             public_data: Default::default(),
         })
@@ -507,6 +510,7 @@ pub fn write_software_paths_to_yaml(yaml_path: &Path, paths: &SoftwarePaths) -> 
             software: SoftwarePaths {
                 prefetch: paths.prefetch.clone(),
                 fasterq_dump: paths.fasterq_dump.clone(),
+                blastdbcmd: paths.blastdbcmd.clone(),
             },
             public_data: Default::default(),
         }
