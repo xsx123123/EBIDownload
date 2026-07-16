@@ -158,13 +158,18 @@ impl UiManager {
 
         let cur_str = human_binary_bytes(sum_bytes);
         let tot_str = human_binary_bytes(cur_total);
+        let speed_mib = speed / 1024.0 / 1024.0;
         buf.clear();
+        // Segment-colored status line (ANSI is fine: status bar is TTY-only via MultiProgress).
         let _ = write!(
             buf,
-            "✅ {completed} completed | 🔄 {active} downloading | ⏳ {queued} queued | ⚠️ {failed} failed | ⚡ {speed_mib:.1} MiB/s | 📦 {cur}/{tot}",
-            speed_mib = speed / 1024.0 / 1024.0,
-            cur = cur_str,
-            tot = tot_str,
+            "{c} · {a} · {q} · {f} · {s} · {b}",
+            c = paint_seg("✓", &format!("{completed} done"), "green"),
+            a = paint_seg("↓", &format!("{active} active"), "cyan"),
+            q = paint_seg("…", &format!("{queued} queued"), "dim"),
+            f = paint_seg("!", &format!("{failed} failed"), if failed > 0 { "red" } else { "dim" }),
+            s = paint_seg("⚡", &format!("{speed_mib:.1} MiB/s"), "yellow"),
+            b = paint_seg("📦", &format!("{cur_str}/{tot_str}"), "white"),
         );
         self.status_pb.set_message(buf.clone());
     }
@@ -223,6 +228,21 @@ fn status_bar_style() -> ProgressStyle {
     ProgressStyle::with_template("{spinner:.green} {msg}")
         .expect("valid status bar template")
         .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
+}
+
+/// Colorize one status-bar segment: `icon label` with a fixed ANSI color name.
+fn paint_seg(icon: &str, label: &str, color: &str) -> String {
+    // Raw ANSI so we do not pull nu-ansi-term into the ui_manager crate path.
+    let code = match color {
+        "green" => "32;1",
+        "cyan" => "36;1",
+        "yellow" => "33;1",
+        "red" => "31;1",
+        "white" => "37;1",
+        "dim" => "2",
+        _ => "0",
+    };
+    format!("\x1b[{code}m{icon} {label}\x1b[0m")
 }
 
 /// Format bytes as a short binary unit string (KiB/MiB/GiB), matching

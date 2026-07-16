@@ -2,18 +2,20 @@ use indicatif::ProgressStyle;
 
 pub fn transfer_bar_style() -> ProgressStyle {
     ProgressStyle::with_template(
-        "{spinner:.green} {prefix:<14.bold.cyan} {bar:32.cyan/bright_black} {percent:>3}%  {binary_bytes:>9}/{binary_total_bytes:<9}  {binary_bytes_per_sec:>11}  ETA {eta:>7}  {msg:.dim}",
+        "{spinner:.green} {prefix:<14.bold.cyan} {bar:28.cyan/bright_black} {percent:>3}% {binary_bytes:>9}/{binary_total_bytes:<9} {binary_bytes_per_sec:>10} ETA {eta_precise:>8} {msg:.dim}",
     )
     .expect("valid transfer progress template")
-    .progress_chars("━━─")
+    .progress_chars("█▉▊▋▌▍▎▏░")
+    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
 }
 
 pub fn verify_bar_style() -> ProgressStyle {
     ProgressStyle::with_template(
-        "{spinner:.yellow} {prefix:<14.bold.yellow} {bar:32.green/bright_black} {percent:>3}%  {binary_bytes:>9}/{binary_total_bytes:<9}  {msg:.dim}",
+        "{spinner:.yellow} {prefix:<14.bold.yellow} {bar:28.green/bright_black} {percent:>3}% {binary_bytes:>9}/{binary_total_bytes:<9} {msg:.dim}",
     )
     .expect("valid verify progress template")
-    .progress_chars("━━─")
+    .progress_chars("█▉▊▋▌▍▎▏░")
+    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
 }
 
 pub fn spinner_style() -> ProgressStyle {

@@ -37,14 +37,17 @@ const SCRIPT_NAME: &str = "EBIDownload";
 
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 
-const HELP_LOGO: &str = "\n\n\x1b[1;37m    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗ \x1b[0m\n\
+// Help logo: solid white, each line starts with ANSI so `\` line-continuation
+// does not strip the leading indent that follows the color codes.
+const HELP_LOGO: &str = "\n\n\
+\x1b[1;37m    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗\x1b[0m\n\
 \x1b[1;37m    ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗\x1b[0m\n\
 \x1b[1;37m    █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║\x1b[0m\n\
 \x1b[1;37m    ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║\x1b[0m\n\
 \x1b[1;37m    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝\x1b[0m\n\
-\x1b[1;37m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ \x1b[0m\n\
-                                                                          \n\
-\x1b[1;37m              🧬  EMBL-ENA Data Toolkit   |  v1.4.1\x1b[0m";
+\x1b[1;37m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝\x1b[0m\n\
+\n\
+\x1b[36m              🧬  EMBL-ENA Data Toolkit  │  v1.4.1\x1b[0m";
 
 const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
@@ -555,13 +558,14 @@ impl Drop for MpWriter {
     }
 }
 
-/// 自定义日志 formatter，为终端输出提供类似 Python colorlog 的配色：
-/// - 时间戳：紫色
-/// - 日志级别：TRACE 灰 / DEBUG 青 / INFO 绿 / WARN 黄 / ERROR 红
-/// - target（模块名）：青色
-/// - 消息体：终端默认颜色
+/// Custom log formatter for terminal output (colorlog-style):
+/// - timestamp: dim purple `[HH:MM:SS]`
+/// - level: bold TRACE/DEBUG/INFO/WARN/ERROR with distinct colors
+/// - target (module): dim cyan, fixed width 12
+/// - message: terminal default
 ///
-/// 文件日志仍使用 `with_ansi(false)` 的纯文本 formatter，避免 ANSI 转义码污染 log 文件。
+/// File logs still use a plain `with_ansi(false)` formatter so ANSI codes
+/// never pollute the log file.
 struct ColoredFormatter;
 
 impl<S, N> FormatEvent<S, N> for ColoredFormatter
@@ -575,33 +579,42 @@ where
         mut writer: Writer<'_>,
         event: &Event<'_>,
     ) -> std::fmt::Result {
+        use nu_ansi_term::Style;
+
         let use_color = writer.has_ansi_escapes();
 
-        // 时间戳 [HH:MM:SS]
+        // Timestamp [HH:MM:SS]
         let now = Local::now().format("%H:%M:%S");
         if use_color {
-            write!(writer, "{} ", Color::Purple.paint(format!("[{}]", now)))?;
+            write!(
+                writer,
+                "{} ",
+                Style::new()
+                    .fg(Color::Purple)
+                    .dimmed()
+                    .paint(format!("[{}]", now))
+            )?;
         } else {
             write!(writer, "[{}] ", now)?;
         }
 
-        // 日志级别，左对齐 5 位
+        // Level, left-aligned width 5, bold when colored
         let level = event.metadata().level();
         let level_text = format!("{:<5}", level);
         if use_color {
-            let level_color = match *level {
-                tracing::Level::TRACE => Color::Fixed(8), // 灰色
-                tracing::Level::DEBUG => Color::Cyan,
-                tracing::Level::INFO => Color::Green,
-                tracing::Level::WARN => Color::Yellow,
-                tracing::Level::ERROR => Color::Red,
+            let level_style = match *level {
+                tracing::Level::TRACE => Style::new().fg(Color::Fixed(8)).dimmed(),
+                tracing::Level::DEBUG => Style::new().fg(Color::Cyan).bold(),
+                tracing::Level::INFO => Style::new().fg(Color::Green).bold(),
+                tracing::Level::WARN => Style::new().fg(Color::Yellow).bold(),
+                tracing::Level::ERROR => Style::new().fg(Color::Red).bold(),
             };
-            write!(writer, "{} ", level_color.paint(level_text))?;
+            write!(writer, "{} ", level_style.paint(level_text))?;
         } else {
             write!(writer, "{} ", level_text)?;
         }
 
-        // target / 模块名，取路径最后一段，青色，宽度 12 字符，过长截断
+        // Target / module: last path segment, dim cyan, width 12, center-aligned
         let target = event.metadata().target();
         let target_short = target
             .rsplit_once("::")
@@ -612,17 +625,30 @@ where
         } else {
             target_short
         };
+        // Center-pad inside fixed width 12: e.g. "aws_s3" → "   aws_s3   "
+        let pad = 12usize.saturating_sub(target_display.len());
+        let left = pad / 2;
+        let right = pad - left;
+        let target_centered = format!(
+            "[{}{}{}]",
+            " ".repeat(left),
+            target_display,
+            " ".repeat(right)
+        );
         if use_color {
             write!(
                 writer,
                 "{} ",
-                Color::Cyan.paint(format!("[{:<12}]", target_display))
+                Style::new()
+                    .fg(Color::Cyan)
+                    .dimmed()
+                    .paint(target_centered)
             )?;
         } else {
-            write!(writer, "[{:<12}] ", target_display)?;
+            write!(writer, "{} ", target_centered)?;
         }
 
-        // 消息体及字段，使用 compact field formatter
+        // Message body + fields
         ctx.format_fields(writer.by_ref(), event)?;
         writeln!(writer)
     }
@@ -630,7 +656,7 @@ where
 
 // Network health check
 async fn check_network_health() {
-    info!("🏥 Performing network connectivity check...");
+    info!("🏥 Network connectivity check");
     let targets = vec![
         ("https://www.ebi.ac.uk", "EBI API"),
         ("https://eutils.ncbi.nlm.nih.gov", "NCBI API"),
@@ -649,17 +675,17 @@ async fn check_network_health() {
     for (url, name) in targets {
         match client.head(url).send().await {
             Ok(_) => {
-                info!("   ✅ {} is reachable.", name);
+                info!("  ✓  {} reachable", name);
             }
             Err(e) => {
-                warn!("   ⚠️  {} is NOT reachable!", name);
+                warn!("  ✗  {} NOT reachable", name);
                 if e.is_connect() || e.is_timeout() {
-                    warn!("      👉 Hint: Check DNS (/etc/resolv.conf) or Proxy (export https_proxy=...).");
+                    warn!("     → Hint: check DNS (/etc/resolv.conf) or proxy (https_proxy)");
                 }
             }
         }
     }
-    info!("🏥 Network check finished. Proceeding...");
+    info!("🏥 Network check done — proceeding");
 }
 
 #[tokio::main]
@@ -833,14 +859,10 @@ async fn run_validate(args: &ValidateArgs, cli: &Cli) -> Result<()> {
     .await;
 
     let (passed, failed) = result?;
+    print_summary_line("Validation finished", passed, failed, "corrupted");
     if failed > 0 {
-        eprintln!(
-            "\n❌ Validation finished: ✅ {} passed | ❌ {} corrupted",
-            passed, failed
-        );
         return Err(anyhow!("{} volumes failed validation", failed));
     }
-    eprintln!("\n✅ Validation finished: ✅ {} passed | ❌ {} corrupted", passed, failed);
     Ok(())
 }
 
@@ -886,11 +908,10 @@ async fn run_md5(args: &Md5Args) -> Result<()> {
                 verify_args.threads,
             )
             .await?;
+            print_summary_line("Verification finished", passed, failed, "failed");
             if failed > 0 {
-                eprintln!("\n❌ Verification finished: ✅ {} passed | ❌ {} failed", passed, failed);
                 return Err(anyhow!("{} files failed MD5 verification", failed));
             }
-            eprintln!("\n✅ Verification finished: ✅ {} passed | ❌ {} failed", passed, failed);
             Ok(())
         }
     }
@@ -1150,19 +1171,45 @@ async fn run_deps(args: &DepsArgs, cli: &Cli) -> Result<()> {
 }
 
 fn print_banner() {
-    let logo = format!(
-        r#"
-    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗
-    ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗
-    █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║
-    ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║
-    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝
-    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
+    // Full-string lines (not `\`-continued) so leading indent is preserved.
+    // Single solid color — clean, not flashy.
+    const LINES: &[&str] = &[
+        "    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗",
+        "    ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗",
+        "    █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║",
+        "    ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║",
+        "    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝",
+        "    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝",
+    ];
 
-              🧬  EMBL-ENA Data Toolkit    |  v{}"#,
-        VERSION
+    println!();
+    for line in LINES {
+        println!("{}", Color::White.bold().paint(*line));
+    }
+    println!(
+        "{}",
+        Color::Cyan.paint(format!(
+            "              🧬  EMBL-ENA Data Toolkit  │  v{}",
+            VERSION
+        ))
     );
-    println!("{}\n", logo);
+    println!();
+}
+
+/// One-line pass/fail summary for validate / md5 verify (avoids double-emoji clutter).
+fn print_summary_line(label: &str, passed: usize, failed: usize, fail_word: &str) {
+    let ok = Color::Green.bold().paint(format!("{} passed", passed));
+    let bad = if failed > 0 {
+        Color::Red.bold().paint(format!("{} {}", failed, fail_word))
+    } else {
+        Color::Green.paint(format!("0 {}", fail_word))
+    };
+    let head = if failed > 0 {
+        Color::Red.bold().paint(format!("✗ {}", label))
+    } else {
+        Color::Green.bold().paint(format!("✓ {}", label))
+    };
+    eprintln!("\n{}  ·  {}  ·  {}", head, ok, bad);
 }
 
 fn setup_logging(
