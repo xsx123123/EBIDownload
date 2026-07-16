@@ -61,6 +61,14 @@ pub async fn delete_volume_files(volume_prefix: &Path) -> Result<()> {
                 .await
                 .with_context(|| format!("Failed to remove {}", path.display()))?;
         }
+        // Also remove the resumable download progress metadata so the next
+        // download does not skip chunks based on a stale record.
+        let meta_path = volume_prefix.with_extension(format!("{ext}.meta.json"));
+        if meta_path.exists() {
+            tokio::fs::remove_file(&meta_path)
+                .await
+                .with_context(|| format!("Failed to remove {}", meta_path.display()))?;
+        }
     }
     Ok(())
 }

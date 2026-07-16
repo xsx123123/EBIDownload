@@ -18,6 +18,10 @@ const DEFAULT_FILE_WORKERS: usize = 8;
 const DEFAULT_INNER_WORKERS: usize = 4;
 const DEFAULT_CHUNK_SIZE_MB: u64 = 64;
 
+const GREEN: &str = "\x1b[32m";
+const RED_BOLD: &str = "\x1b[1;31m";
+const RESET: &str = "\x1b[0m";
+
 #[derive(Debug, Clone)]
 struct PublicObject {
     key: String,
@@ -392,7 +396,7 @@ impl PublicDataDownloader {
                 })?;
 
                 let spinner = self.progress.add(ProgressBar::new_spinner());
-                spinner.set_message(format!("⏳ 校验 {}...", volume.name));
+                spinner.set_message(format!("validating {}...", volume.name));
                 spinner.enable_steady_tick(Duration::from_millis(100));
 
                 match super::validator::validate_blast_volume(
@@ -403,12 +407,15 @@ impl PublicDataDownloader {
                 .await?
                 {
                     true => {
-                        spinner.finish_with_message(format!("✅ {} 正常", volume.name));
+                        spinner.finish_with_message(format!(
+                            "{GREEN}  ✅  {:<8} validated{RESET}",
+                            volume.name
+                        ));
                         break;
                     }
                     false => {
                         spinner.abandon_with_message(format!(
-                            "❌ 抓到损坏的分卷了: {}",
+                            "{RED_BOLD}  ❌  {:<8} corrupted ❌{RESET}",
                             volume.name
                         ));
                         attempts += 1;
@@ -420,7 +427,7 @@ impl PublicDataDownloader {
                             ));
                         }
                         self.progress.println(format!(
-                            "🔄 {} 校验失败 ({}/{}), {} 秒后重新下载",
+                            "🔄 {} validation failed ({}/{}), re-downloading in {}s",
                             volume.name, attempts, cfg.max_retries, cfg.retry_delay_seconds
                         ))?;
                         sleep(Duration::from_secs(cfg.retry_delay_seconds)).await;
