@@ -3,6 +3,7 @@
 pub mod aws_s3;
 pub mod deps;
 pub mod ftp;
+pub mod md5;
 pub mod observer;
 pub mod prefetch;
 pub mod progress;
@@ -489,7 +490,7 @@ pub fn generate_md5sum_file_at(md5_path: &Path, files: &[PathBuf]) -> Result<Pat
 
     for path in files {
         let mut f = File::open(path)?;
-        let mut ctx = md5::Context::new();
+        let mut ctx = ::md5::Context::new();
         let mut buf = vec![0u8; 1024 * 1024];
         loop {
             let n = f.read(&mut buf)?;

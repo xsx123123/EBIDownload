@@ -114,6 +114,8 @@ enum Commands {
     PublicData(PublicDataArgs),
     /// Validate an existing BLAST database directory with blastdbcmd
     Validate(ValidateArgs),
+    /// Generate or verify MD5 checksums for files and directories
+    Md5(Md5Args),
     /// Upload sequencing data to AWS S3 for NCBI SRA submission
     Upload(UploadArgs),
     /// Manage external dependencies (sra-tools)
@@ -308,6 +310,75 @@ struct ValidateArgs {
         help = "Path to blastdbcmd executable (overrides software.blastdbcmd in YAML)"
     )]
     tool: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+#[command(arg_required_else_help = true)]
+struct Md5Args {
+    #[command(subcommand)]
+    command: Md5Subcommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum Md5Subcommand {
+    /// Generate an md5sum-compatible manifest for a file or directory
+    Generate(Md5GenerateArgs),
+    /// Verify files against an existing md5sum-compatible manifest
+    Verify(Md5VerifyArgs),
+}
+
+#[derive(Parser, Debug)]
+#[command(arg_required_else_help = true)]
+struct Md5GenerateArgs {
+    #[arg(
+        short,
+        long,
+        value_name = "PATH",
+        help = "File or directory to hash"
+    )]
+    input: PathBuf,
+    #[arg(
+        short,
+        long,
+        value_name = "FILE",
+        default_value = "md5.txt",
+        help = "Output manifest path"
+    )]
+    output: PathBuf,
+    #[arg(
+        short,
+        long,
+        default_value = "4",
+        help = "Number of concurrent hashing threads"
+    )]
+    threads: usize,
+}
+
+#[derive(Parser, Debug)]
+#[command(arg_required_else_help = true)]
+struct Md5VerifyArgs {
+    #[arg(
+        short,
+        long,
+        value_name = "FILE",
+        help = "md5sum-compatible manifest to verify against"
+    )]
+    input: PathBuf,
+    #[arg(
+        short,
+        long,
+        value_name = "DIR",
+        default_value = ".",
+        help = "Directory containing the files to verify"
+    )]
+    dir: PathBuf,
+    #[arg(
+        short,
+        long,
+        default_value = "4",
+        help = "Number of concurrent hashing threads"
+    )]
+    threads: usize,
 }
 
 // ============================================================
@@ -599,13 +670,25 @@ async fn main() -> ExitCode {
         Commands::Download(args) => args.output.clone(),
         Commands::PublicData(args) => args.output.clone(),
         Commands::Validate(args) => args.dir.clone(),
+        Commands::Md5(args) => match &args.command {
+            Md5Subcommand::Generate(g) => g
+                .output
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(".")),
+            Md5Subcommand::Verify(v) => v.dir.clone(),
+        },
         Commands::Upload(_) | Commands::Deps(_) => PathBuf::from("."),
     };
 
-    let download_output = match &cli.command {
-        Commands::Download(args) => Some(&args.output),
-        Commands::PublicData(args) => Some(&args.output),
-        Commands::Validate(args) => Some(&args.dir),
+    let download_output: Option<&Path> = match &cli.command {
+        Commands::Download(args) => Some(args.output.as_path()),
+        Commands::PublicData(args) => Some(args.output.as_path()),
+        Commands::Validate(args) => Some(args.dir.as_path()),
+        Commands::Md5(args) => match &args.command {
+            Md5Subcommand::Generate(g) => g.output.parent(),
+            Md5Subcommand::Verify(v) => Some(v.dir.as_path()),
+        },
         Commands::Upload(_) | Commands::Deps(_) => None,
     };
     if let Some(output) = download_output {
@@ -623,15 +706,16 @@ async fn main() -> ExitCode {
         &cli.log_format,
         match &cli.command {
             Commands::Download(args) => args.accession.as_deref(),
-            Commands::PublicData(_) | Commands::Validate(_) | Commands::Upload(_) | Commands::Deps(_) => None,
+            Commands::PublicData(_) | Commands::Validate(_) | Commands::Md5(_) | Commands::Upload(_) | Commands::Deps(_) => None,
         },
     ) {
         eprintln!("❌ Failed to setup logging: {}", e);
         return ExitCode::FAILURE;
     }
 
-    if !matches!(&cli.command,
-        Commands::PublicData(_) | Commands::Validate(_)
+    if !matches!(
+        &cli.command,
+        Commands::PublicData(_) | Commands::Validate(_) | Commands::Md5(_)
     ) {
         check_network_health().await;
     }
@@ -641,6 +725,7 @@ async fn main() -> ExitCode {
             Commands::Download(args) => run_download(args, &cli).await,
             Commands::PublicData(args) => run_public_data(args, &cli).await,
             Commands::Validate(args) => run_validate(args, &cli).await,
+            Commands::Md5(args) => run_md5(args).await,
             Commands::Upload(args) => run_upload(args).await,
             Commands::Deps(args) => run_deps(args, &cli).await,
         }
@@ -760,6 +845,58 @@ async fn run_validate(args: &ValidateArgs, cli: &Cli) -> Result<()> {
     }
     eprintln!("\n✅ Validation finished: ✅ {} passed | ❌ {} corrupted", passed, failed);
     Ok(())
+}
+
+async fn run_md5(args: &Md5Args) -> Result<()> {
+    match &args.command {
+        Md5Subcommand::Generate(generate_args) => {
+            if !generate_args.input.exists() {
+                return Err(anyhow!(
+                    "Input path {} does not exist",
+                    generate_args.input.display()
+                ));
+            }
+            if let Some(parent) = generate_args.output.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent)?;
+                }
+            }
+            ebidownload_core::md5::generate_md5_manifest(
+                &generate_args.input,
+                &generate_args.output,
+                generate_args.threads,
+            )
+            .await?;
+            info!("🎉 MD5 manifest generated successfully");
+            Ok(())
+        }
+        Md5Subcommand::Verify(verify_args) => {
+            if !verify_args.input.exists() {
+                return Err(anyhow!(
+                    "MD5 manifest {} does not exist",
+                    verify_args.input.display()
+                ));
+            }
+            if !verify_args.dir.exists() {
+                return Err(anyhow!(
+                    "Directory {} does not exist",
+                    verify_args.dir.display()
+                ));
+            }
+            let (passed, failed) = ebidownload_core::md5::verify_md5_manifest(
+                &verify_args.input,
+                &verify_args.dir,
+                verify_args.threads,
+            )
+            .await?;
+            if failed > 0 {
+                eprintln!("\n❌ Verification finished: ✅ {} passed | ❌ {} failed", passed, failed);
+                return Err(anyhow!("{} files failed MD5 verification", failed));
+            }
+            eprintln!("\n✅ Verification finished: ✅ {} passed | ❌ {} failed", passed, failed);
+            Ok(())
+        }
+    }
 }
 
 // ============================================================
