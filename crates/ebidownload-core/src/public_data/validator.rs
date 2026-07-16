@@ -113,24 +113,27 @@ pub async fn validate_all_volumes(
 
         match validate_blast_volume(&prefix, dbtype, tool_path).await {
             Ok(true) => {
-                spinner.finish_with_message(format!(
-                    "{GREEN}  ✅  {:<8} validated{RESET}",
+                spinner.finish_and_clear();
+                progress.println(format!(
+                    "{GREEN}✅ {:<8} validated{RESET}",
                     name
-                ));
+                ))?;
                 passed += 1;
             }
             Ok(false) => {
-                spinner.abandon_with_message(format!(
-                    "{RED_BOLD}  ❌  {:<8} corrupted ❌{RESET}",
+                spinner.finish_and_clear();
+                progress.println(format!(
+                    "{RED_BOLD}❌ {:<8} corrupted{RESET}",
                     name
-                ));
+                ))?;
                 failed += 1;
             }
             Err(e) => {
-                spinner.abandon_with_message(format!(
-                    "{RED_BOLD}  ❌  {:<8} validation error: {} ❌{RESET}",
+                spinner.finish_and_clear();
+                progress.println(format!(
+                    "{RED_BOLD}❌ {:<8} validation error: {}{RESET}",
                     name, e
-                ));
+                ))?;
                 failed += 1;
             }
         }
@@ -169,17 +172,19 @@ where
 
         match validate_blast_volume(volume_prefix, dbtype, tool_path).await? {
             true => {
-                spinner.finish_with_message(format!(
-                    "{GREEN}  ✅  {:<8} validated{RESET}",
+                spinner.finish_and_clear();
+                progress.println(format!(
+                    "{GREEN}✅ {:<8} validated{RESET}",
                     volume_name
-                ));
+                ))?;
                 return Ok(());
             }
             false => {
-                spinner.abandon_with_message(format!(
-                    "{RED_BOLD}  ❌  {:<8} corrupted ❌{RESET}",
+                spinner.finish_and_clear();
+                progress.println(format!(
+                    "{RED_BOLD}❌ {:<8} corrupted{RESET}",
                     volume_name
-                ));
+                ))?;
                 attempts += 1;
                 if attempts > max_retries {
                     return Err(anyhow!(

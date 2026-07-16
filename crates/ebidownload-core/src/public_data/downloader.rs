@@ -448,15 +448,17 @@ impl PublicDataDownloader {
                 .await
                 {
                     Ok(true) => {
-                        spinner.finish_with_message(format!(
-                            "{GREEN}  ✅  {:<8} validated{RESET}",
+                        spinner.finish_and_clear();
+                        let _ = self.progress.println(format!(
+                            "{GREEN}✅ {:<8} validated{RESET}",
                             volume.name
                         ));
                         break;
                     }
                     Ok(false) => {
-                        spinner.abandon_with_message(format!(
-                            "{RED_BOLD}  ❌  {:<8} corrupted ❌{RESET}",
+                        spinner.finish_and_clear();
+                        let _ = self.progress.println(format!(
+                            "{RED_BOLD}❌ {:<8} corrupted{RESET}",
                             volume.name
                         ));
                         attempts += 1;
@@ -485,6 +487,7 @@ impl PublicDataDownloader {
                         }
                     }
                     Err(e) => {
+                        spinner.finish_and_clear();
                         return Err(volume.failure(
                             bucket,
                             format!("Volume {} validation command failed: {}", volume.name, e),
