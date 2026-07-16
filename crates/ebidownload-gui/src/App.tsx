@@ -624,7 +624,7 @@ function App() {
           )}
         </button>
         <h1>EBIDownload</h1>
-        <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Automated Bioinformatics Data Retrieval</p>
+        <p className="header-subtitle">Automated Bioinformatics Data Retrieval</p>
       </div>
 
       <div className="tabs">
@@ -702,7 +702,7 @@ function App() {
         {activeTab === 'about' && <AboutTab />}
       </div>
 
-      <div className="card" style={{ marginTop: '2rem' }}>
+      <div className="card logs-panel">
         <div className="card-title" style={{ justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -723,7 +723,7 @@ function App() {
         </div>
         <div className="log-container">
           {logs.filter(log => logLevelFilter === 'all' || log.level === logLevelFilter).length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+            <div className="hint-text" style={{ fontStyle: 'italic' }}>
               {logLevelFilter === 'all' ? 'System logs will appear here...' : `No ${logLevelFilter.toUpperCase()} logs to display.`}
             </div>
           ) : (
@@ -858,7 +858,6 @@ function DownloadTab({
                 value={form.tsv}
                 readOnly
                 placeholder="Select a TSV file"
-                style={{ flex: 1 }}
               />
               <button className="btn btn-secondary" onClick={handleSelectTsv} disabled={isDownloading}>
                 Browse
@@ -883,7 +882,6 @@ function DownloadTab({
                 value={form.output}
                 readOnly
                 placeholder="Where to save files"
-                style={{ flex: 1 }}
               />
               <button className="btn btn-secondary" onClick={handleSelectOutput} disabled={isDownloading}>
                 Browse
@@ -991,7 +989,7 @@ function DownloadTab({
               />
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', justifyContent: 'center' }}>
+          <div className="checkbox-stack">
             <label className="checkbox-group">
               <input
                 type="checkbox"
@@ -1025,7 +1023,7 @@ function DownloadTab({
         </>
       )}
 
-      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginBottom: '2rem' }}>
+      <div className="action-bar">
         {configCollapsed && !isDownloading && (
           <button
             className="btn btn-secondary"
@@ -1167,9 +1165,9 @@ function DownloadTab({
                 <tbody>
                   {metadata.filter(shouldInclude).map((record: EnaRecord) => (
                     <tr key={record.run_accession}>
-                      <td style={{ fontWeight: 600, color: 'var(--primary)' }}>{record.run_accession}</td>
-                      <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.sample_title}</td>
-                      <td><span className="status-badge" style={{ backgroundColor: '#334155', color: '#f1f5f9' }}>{record.library_layout || 'N/A'}</span></td>
+                      <td className="run-id">{record.run_accession}</td>
+                      <td className="sample-title">{record.sample_title}</td>
+                      <td><span className="status-badge layout-badge">{record.library_layout || 'N/A'}</span></td>
                       <td>
                         {progress[record.run_accession] ? (
                           <div className="run-progress">
@@ -1212,7 +1210,7 @@ function DownloadTab({
                             </div>
                           </div>
                         ) : (
-                          <span className="status-badge" style={{ opacity: 0.5 }}>Pending</span>
+                          <span className="status-badge pending-badge">Pending</span>
                         )}
                       </td>
                     </tr>
@@ -1255,8 +1253,8 @@ function UploadTab({
 
   return (
     <div className="upload-tab">
-      <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid #f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.08)' }}>
-        <div className="card-title" style={{ color: '#f59e0b' }}>
+      <div className="card notice-card">
+        <div className="card-title">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
             <line x1="12" y1="9" x2="12" y2="13"></line>
@@ -1264,7 +1262,7 @@ function UploadTab({
           </svg>
           Experimental Feature
         </div>
-        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: 0 }}>
+        <p>
           The upload feature is still under testing. Please verify your uploads and use with caution.
         </p>
       </div>
@@ -1327,7 +1325,6 @@ function UploadTab({
                 value={form.files.length > 0 ? `${form.files.length} file(s) selected` : ''}
                 readOnly
                 placeholder="No files selected"
-                style={{ flex: 1 }}
               />
               <button className="btn btn-secondary" onClick={handleSelectFiles} disabled={isUploading}>
                 Browse
@@ -1367,7 +1364,7 @@ function UploadTab({
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
+      <div className="action-bar">
         <button
           className="btn btn-primary"
           onClick={onStartUpload}
@@ -1465,13 +1462,12 @@ function SettingsTab({
               value={configPath}
               readOnly
               placeholder="Path to EBIDownload.yaml"
-              style={{ flex: 1 }}
             />
             <button className="btn btn-secondary" onClick={onSelectConfigPath}>
               Browse
             </button>
           </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+          <p className="hint-text">
             Default location is your system config directory. Saving will create the file if it does not exist.
           </p>
         </div>
@@ -1492,7 +1488,6 @@ function SettingsTab({
               value={form.prefetchPath}
               onChange={(e) => setForm((prev: any) => ({ ...prev, prefetchPath: e.target.value }))}
               placeholder="e.g., /usr/local/bin/prefetch"
-              style={{ flex: 1 }}
             />
             <button className="btn btn-secondary" onClick={createFileSelector('prefetchPath')}>Browse</button>
           </div>
@@ -1506,13 +1501,12 @@ function SettingsTab({
               value={form.fasterqDumpPath}
               onChange={(e) => setForm((prev: any) => ({ ...prev, fasterqDumpPath: e.target.value }))}
               placeholder="e.g., /usr/local/bin/fasterq-dump"
-              style={{ flex: 1 }}
             />
             <button className="btn btn-secondary" onClick={createFileSelector('fasterqDumpPath')}>Browse</button>
           </div>
         </div>
         
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+        <div className="action-bar" style={{ marginBottom: 0, marginTop: '0.5rem' }}>
           <button className="btn btn-primary" onClick={onSaveConfig}>
             Save Configuration
           </button>
@@ -1568,7 +1562,7 @@ function AboutTab() {
           </svg>
           License & Credits
         </div>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        <p className="hint-text" style={{ fontSize: '0.9rem', lineHeight: 1.55 }}>
           Licensed under MIT. Built with Rust, Tauri, and React.
         </p>
       </div>
