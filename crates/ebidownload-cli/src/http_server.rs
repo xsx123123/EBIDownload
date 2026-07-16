@@ -11,8 +11,7 @@ use ebidownload_core::progress_store::ProgressStore;
 use rand::Rng;
 use std::sync::Arc;
 
-static PROGRESS_KEY: &[u8; 32] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/progress_key.bin"));
+static PROGRESS_KEY: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/progress_key.bin"));
 
 pub fn progress_key_hex() -> String {
     hex::encode(PROGRESS_KEY)

@@ -26,11 +26,10 @@ impl RunProgress {
             self.overall_percent = 0.0;
             return;
         }
-        self.overall_percent = (
-            self.download.percent * self.download.weight
-                + self.extraction.percent * self.extraction.weight
-                + self.compression.percent * self.compression.weight
-        ) / total_weight;
+        self.overall_percent = (self.download.percent * self.download.weight
+            + self.extraction.percent * self.extraction.weight
+            + self.compression.percent * self.compression.weight)
+            / total_weight;
     }
 }
 

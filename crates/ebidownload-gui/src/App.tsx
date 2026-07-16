@@ -53,6 +53,20 @@ interface DepInstallProgress {
   message: string;
 }
 
+interface TransferProgress {
+  percent: number;
+  status: string;
+  speed_mbps: number;
+}
+
+interface GlobalProgress {
+  total: number;
+  completed: number;
+  active: number;
+  percent: number;
+  speed_mbps: number;
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<'download' | 'upload' | 'settings' | 'about'>('download');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -66,8 +80,8 @@ function App() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<Record<string, { percent: number; status: string; speed_mbps: number }>>({});
-  const [globalProgress, setGlobalProgress] = useState<{ total: number; completed: number; percent: number } | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, TransferProgress>>({});
+  const [globalProgress, setGlobalProgress] = useState<GlobalProgress | null>(null);
   const [uploadProgress, setUploadProgress] = useState<Record<string, { percent: number; status: string }>>({});
   const [logs, setLogs] = useState<{ level: string; message: string; time: string }[]>([]);
   const [logLevelFilter, setLogLevelFilter] = useState<string>('info');
@@ -257,17 +271,6 @@ function App() {
     setLogs(prev => [...prev.slice(-100), { level, message, time }]);
   };
 
-  const updateGlobalProgress = (nextProgress: Record<string, { percent: number; status: string; speed_mbps: number }>, totalCount: number) => {
-    const entries = Object.values(nextProgress);
-    const completedCount = entries.filter(p => p.status === 'Completed').length;
-    // Smooth overall progress based on the average percentage of all runs,
-    // instead of counting how many runs have fully completed.
-    const avgPercent = entries.length > 0
-      ? entries.reduce((sum, p) => sum + p.percent, 0) / entries.length
-      : 0;
-    setGlobalProgress({ total: totalCount, completed: completedCount, percent: avgPercent });
-  };
-
   const handleDownloadEvent = (event: DownloadEvent) => {
     switch (event.type) {
       case 'Log':
@@ -275,7 +278,7 @@ function App() {
         break;
       case 'Progress':
         setDownloadProgress(prev => {
-          const next = {
+          const next: Record<string, TransferProgress> = {
             ...prev,
             [event.data.run_id]: {
               percent: event.data.percent,
@@ -283,14 +286,24 @@ function App() {
               speed_mbps: event.data.speed_mbps ?? 0,
             },
           };
-          const totalCount = Object.keys(next).length;
-          updateGlobalProgress(next, totalCount);
+          setGlobalProgress(current => {
+            const entries = Object.values(next);
+            const total = Math.max(current?.total ?? 0, entries.length);
+            const completed = entries.filter(p => p.status === 'Completed').length;
+            const active = entries.filter(p => p.status !== 'Completed' && p.status !== 'Failed').length;
+            const percent = total > 0
+              ? entries.reduce((sum, p) => sum + Math.max(0, Math.min(100, p.percent)), 0) / total
+              : 0;
+            const speed_mbps = entries.reduce((sum, p) => sum + p.speed_mbps, 0);
+            return { total, completed, active, percent, speed_mbps };
+          });
           return next;
         });
         break;
       case 'Started':
         setIsDownloading(true);
-        setGlobalProgress({ total: event.data.total, completed: 0, percent: 0 });
+        setDownloadProgress({});
+        setGlobalProgress({ total: event.data.total, completed: 0, active: 0, percent: 0, speed_mbps: 0 });
         addLog('info', `Starting download of ${event.data.total} files`);
         break;
       case 'Completed':
@@ -735,16 +748,27 @@ const getStatusClass = (status: string) => {
   if (status === 'Downloading') return 'status-downloading';
   if (status === 'Converting' || status === 'Compressing') return 'status-converting';
   if (status === 'Completed') return 'status-completed';
+  if (status === 'Failed') return 'status-failed';
   return '';
 };
 
 // Helper for progress bar class
 const getProgressBarClass = (status: string) => {
-  if (status === 'Downloading') return '';
+  if (status === 'Downloading') return 'active';
   if (status === 'Converting' || status === 'Compressing') return 'converting';
   if (status === 'Completed') return 'completed';
+  if (status === 'Failed') return 'failed';
   return '';
 };
+
+const getStageIndex = (status: string) => {
+  if (status === 'Completed') return 3;
+  if (status === 'Compressing') return 2;
+  if (status === 'Converting') return 1;
+  return 0;
+};
+
+const clampPercent = (percent: number) => Math.max(0, Math.min(100, percent));
 
 // Download Tab Component
 function DownloadTab({
@@ -1098,16 +1122,31 @@ function DownloadTab({
         {globalProgress && globalProgress.total > 0 && (
           <div className="global-progress">
             <div className="global-progress-header">
-              <span>Overall Progress</span>
-              <span>{globalProgress.completed} / {globalProgress.total} ({Math.round(globalProgress.percent)}%)</span>
+              <div>
+                <span className="global-progress-label">Overall progress</span>
+                <span className="global-progress-summary">
+                  {globalProgress.completed} of {globalProgress.total} runs complete
+                  {globalProgress.active > 0 && ` · ${globalProgress.active} active`}
+                </span>
+              </div>
+              <div className="global-progress-metrics">
+                {globalProgress.speed_mbps > 0 && (
+                  <span>{globalProgress.speed_mbps.toFixed(1)} MB/s</span>
+                )}
+                <strong>{Math.round(globalProgress.percent)}%</strong>
+              </div>
             </div>
-            <div className="progress-bar-container" style={{ height: '10px' }}>
+            <div
+              className="progress-bar-container progress-bar-global"
+              role="progressbar"
+              aria-label="Overall download progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(globalProgress.percent)}
+            >
               <div
-                className="progress-bar"
-                style={{
-                  width: `${globalProgress.percent}%`,
-                  transition: 'width 0.4s ease',
-                }}
+                className={`progress-bar ${isDownloading ? 'active' : ''}`}
+                style={{ width: `${clampPercent(globalProgress.percent)}%` }}
               />
             </div>
           </div>
@@ -1133,25 +1172,43 @@ function DownloadTab({
                       <td><span className="status-badge" style={{ backgroundColor: '#334155', color: '#f1f5f9' }}>{record.library_layout || 'N/A'}</span></td>
                       <td>
                         {progress[record.run_accession] ? (
-                          <div style={{ minWidth: '150px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+                          <div className="run-progress">
+                            <div className="run-progress-header">
                               <span className={`status-badge ${getStatusClass(progress[record.run_accession].status)}`}>
                                 {progress[record.run_accession].status}
                               </span>
-                              <span>
-                                {Math.round(progress[record.run_accession].percent)}%
+                              <span className="run-progress-metrics">
                                 {progress[record.run_accession].speed_mbps > 0 && (
-                                  <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)' }}>
+                                  <span className="run-progress-speed">
                                     {progress[record.run_accession].speed_mbps.toFixed(1)} MB/s
                                   </span>
                                 )}
+                                <strong>{Math.round(progress[record.run_accession].percent)}%</strong>
                               </span>
                             </div>
-                            <div className="progress-bar-container">
+                            <div
+                              className="progress-bar-container"
+                              role="progressbar"
+                              aria-label={`${record.run_accession} progress`}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={Math.round(progress[record.run_accession].percent)}
+                            >
                               <div
                                 className={`progress-bar ${getProgressBarClass(progress[record.run_accession].status)}`}
-                                style={{ width: `${progress[record.run_accession].percent}%` }}
+                                style={{ width: `${clampPercent(progress[record.run_accession].percent)}%` }}
                               />
+                            </div>
+                            <div className="stage-track" aria-label={`Current stage: ${progress[record.run_accession].status}`}>
+                              {['Download', 'Convert', 'Compress'].map((stage, index) => {
+                                const stageIndex = getStageIndex(progress[record.run_accession].status);
+                                const state = index < stageIndex
+                                  ? 'done'
+                                  : index === stageIndex && progress[record.run_accession].status !== 'Completed'
+                                    ? 'current'
+                                    : '';
+                                return <span key={stage} className={state}>{stage}</span>;
+                              })}
                             </div>
                           </div>
                         ) : (
@@ -1478,7 +1535,7 @@ function AboutTab() {
           </svg>
         </div>
         <h1>EBIDownload</h1>
-        <p className="about-version">Version 1.4.0</p>
+        <p className="about-version">Version 1.4.1</p>
         <p className="about-description">
           A high-performance tool for downloading sequencing data from ENA/SRA.
           Supports multiple protocols and automatic format conversion.

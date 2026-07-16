@@ -371,23 +371,112 @@ tr:hover td {
 .status-downloading { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
 .status-converting { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
 .status-completed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.status-failed { background: rgba(244, 63, 94, 0.2); color: #fb7185; }
 
 .progress-bar-container {
+  position: relative;
   width: 100%;
-  height: 6px;
+  height: 7px;
   background-color: var(--bg-log);
-  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--border-dim) 75%, transparent);
+  border-radius: 4px;
   overflow: hidden;
 }
 
 .progress-bar {
+  position: relative;
   height: 100%;
   background-color: var(--primary);
+  border-radius: inherit;
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-bar.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    115deg,
+    transparent 0,
+    transparent 10px,
+    rgba(255, 255, 255, 0.24) 10px,
+    rgba(255, 255, 255, 0.24) 17px
+  );
+  animation: progress-flow 1.1s linear infinite;
 }
 
 .progress-bar.completed { background-color: var(--success); }
 .progress-bar.converting { background-color: var(--warning); }
+.progress-bar.failed { background-color: var(--error); }
+
+@keyframes progress-flow {
+  from { transform: translateX(-27px); }
+  to { transform: translateX(0); }
+}
+
+.run-progress {
+  min-width: 230px;
+}
+
+.run-progress-header,
+.run-progress-metrics {
+  display: flex;
+  align-items: center;
+}
+
+.run-progress-header {
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.75rem;
+}
+
+.run-progress-metrics {
+  justify-content: flex-end;
+  gap: 0.55rem;
+  white-space: nowrap;
+}
+
+.run-progress-speed {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-progress-metrics strong,
+.global-progress-metrics strong {
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-track {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.stage-track span {
+  position: relative;
+  padding-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  text-align: center;
+}
+
+.stage-track span::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border-dim);
+}
+
+.stage-track span.done::before { background: var(--success); }
+.stage-track span.current { color: var(--text-main); }
+.stage-track span.current::before { background: var(--primary); }
 
 .log-container {
   background-color: var(--bg-log);
@@ -667,19 +756,50 @@ tr:hover td {
 /* Global download progress */
 .global-progress {
   margin-bottom: 1.25rem;
-  padding: 1rem;
+  padding: 1rem 1.125rem;
   background: var(--bg-input);
   border: 1px solid var(--border-dim);
   border-radius: var(--radius-md);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .global-progress-header {
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: 1rem;
   font-size: 0.875rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
   color: var(--text-main);
+}
+
+.global-progress-label {
+  display: block;
+  font-weight: 700;
+}
+
+.global-progress-summary {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.global-progress-metrics {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.global-progress-metrics strong {
+  font-size: 1.25rem;
+}
+
+.progress-bar-global {
+  height: 11px;
+  border-radius: 6px;
 }
 
 /* About tab */
@@ -774,4 +894,12 @@ tr:hover td {
   .grid-2 { grid-template-columns: 1fr; }
   .form-row { flex-direction: column; align-items: stretch; }
   .header h1 { font-size: 1.875rem; }
+  .global-progress-header { align-items: flex-start; }
+  .global-progress-metrics { flex-direction: column-reverse; align-items: flex-end; gap: 0; }
+  .run-progress { min-width: 190px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar { transition: none; }
+  .progress-bar.active::after { animation: none; }
 }

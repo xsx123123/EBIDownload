@@ -10,10 +10,10 @@ use indicatif::{MultiProgress, ProgressBar};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Progress status for a single file upload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,12 +67,8 @@ pub async fn run_upload(
             "⚠️  S3 bucket region is '{}', but NCBI SRA requires 'us-east-1' (US East - N. Virginia).",
             region
         );
-        warn!(
-            "   Buckets in other regions will NOT be accepted by the SRA Submission Portal."
-        );
-        warn!(
-            "   See: https://www.ncbi.nlm.nih.gov/sra/docs/data-delivery"
-        );
+        warn!("   Buckets in other regions will NOT be accepted by the SRA Submission Portal.");
+        warn!("   See: https://www.ncbi.nlm.nih.gov/sra/docs/data-delivery");
     }
 
     // 1. Initialize AWS S3 client
@@ -153,10 +149,9 @@ fn collect_files(files: &[PathBuf]) -> Result<Vec<(PathBuf, u64)>> {
             warn!("⚠️  File not found, skipping: {}", path.display());
             continue;
         }
-        let metadata = path.metadata().context(format!(
-            "Failed to read file metadata: {}",
-            path.display()
-        ))?;
+        let metadata = path
+            .metadata()
+            .context(format!("Failed to read file metadata: {}", path.display()))?;
         if metadata.is_dir() {
             warn!(
                 "⚠️  Skipping directory (not supported yet): {}",
@@ -296,8 +291,10 @@ async fn upload_single_file(
     pb.set_style(transfer_bar_style());
     pb.set_message(filename.clone());
 
-    let body = ByteStream::from_path(path).await
-        .context(format!("Failed to open file for upload: {}", path.display()))?;
+    let body = ByteStream::from_path(path).await.context(format!(
+        "Failed to open file for upload: {}",
+        path.display()
+    ))?;
 
     client
         .put_object()
@@ -324,27 +321,21 @@ async fn upload_single_file(
 ///
 /// Adds s3:ListBucket and s3:GetObject permissions for the NCBI SRA IAM user,
 /// allowing NCBI to read files directly from your bucket for SRA submission.
-async fn apply_ncbi_bucket_policy(
-    client: &aws_sdk_s3::Client,
-    bucket: &str,
-) -> Result<()> {
+async fn apply_ncbi_bucket_policy(client: &aws_sdk_s3::Client, bucket: &str) -> Result<()> {
     info!("🔐 Configuring NCBI SRA Submission Bucket Policy...");
     info!("   Principal: {}", NCBI_SRA_IAM_ARN);
     info!("   Actions: s3:ListBucket, s3:GetObject");
 
     // Get existing policy (if any)
-    let existing_policy = match client
-        .get_bucket_policy()
-        .bucket(bucket)
-        .send()
-        .await
-    {
+    let existing_policy = match client.get_bucket_policy().bucket(bucket).send().await {
         Ok(output) => {
-            let policy_bytes = output.policy().ok_or_else(|| anyhow!("Empty policy response"))?;
-            let policy_str = std::str::from_utf8(policy_bytes.as_ref())
-                .context("Policy is not valid UTF-8")?;
-            let policy: serde_json::Value =
-                serde_json::from_str(policy_str).context("Failed to parse existing bucket policy")?;
+            let policy_bytes = output
+                .policy()
+                .ok_or_else(|| anyhow!("Empty policy response"))?;
+            let policy_str =
+                std::str::from_utf8(policy_bytes.as_ref()).context("Policy is not valid UTF-8")?;
+            let policy: serde_json::Value = serde_json::from_str(policy_str)
+                .context("Failed to parse existing bucket policy")?;
             Some(policy)
         }
         Err(_) => {
@@ -411,7 +402,10 @@ async fn apply_ncbi_bucket_policy(
     info!("   📋 Next steps:");
     info!("      1. Go to https://submit.ncbi.nlm.nih.gov/subs/sra/");
     info!("      2. In the file upload step, select 'Upload from Amazon S3 storage'");
-    info!("      3. Provide your S3 paths in the format: s3://{}/<filename>", bucket);
+    info!(
+        "      3. Provide your S3 paths in the format: s3://{}/<filename>",
+        bucket
+    );
     Ok(())
 }
 
@@ -426,11 +420,10 @@ fn has_ncbi_sra_statement(policy: &serde_json::Value) -> bool {
                     }
                 }
                 if let Some(aws_arr) = principal.get("AWS").and_then(|a| a.as_array()) {
-                    if aws_arr.iter().any(|a| {
-                        a.as_str()
-                            .map(|s| s == NCBI_SRA_IAM_ARN)
-                            .unwrap_or(false)
-                    }) {
+                    if aws_arr
+                        .iter()
+                        .any(|a| a.as_str().map(|s| s == NCBI_SRA_IAM_ARN).unwrap_or(false))
+                    {
                         return true;
                     }
                 }
@@ -465,10 +458,7 @@ fn generate_metadata_template(
 
     // Write rows for each file
     for (file_path, _size) in files {
-        let filename = file_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
+        let filename = file_path.file_name().unwrap_or_default().to_string_lossy();
 
         let s3_key = match prefix {
             Some(p) => format!("{}/{}", p.trim_end_matches('/'), filename),

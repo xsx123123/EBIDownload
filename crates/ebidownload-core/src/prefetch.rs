@@ -5,19 +5,22 @@ use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 pub async fn download_all(
     records: &[ProcessedRecord],
     config: &Config,
     output_dir: &Path,
-    file_threads: usize,    
-    process_threads: usize, 
+    file_threads: usize,
+    process_threads: usize,
     max_size: &str, // 🟢 New param: Receive max-size string
     cleanup_sra: bool,
 ) -> Result<()> {
     info!("📦 Starting Prefetch pipeline...");
-    info!("⚙️  Config: Parallel Files = {}, Threads/Process = {}, Max Size = {}", file_threads, process_threads, max_size);
+    info!(
+        "⚙️  Config: Parallel Files = {}, Threads/Process = {}, Max Size = {}",
+        file_threads, process_threads, max_size
+    );
 
     let semaphore = Arc::new(Semaphore::new(file_threads));
     let mut handles = Vec::new();
@@ -41,11 +44,11 @@ pub async fn download_all(
             // Full path is: ./aws_data/SRRxxx/SRRxxx.sra
             let sra_dir = output_dir.join(&run_id);
             let sra_file = sra_dir.join(format!("{}.sra", run_id));
-            
+
             let relative_sra_path = format!("{}/{}.sra", run_id, run_id);
 
             // --- Execution Flow ---
-            
+
             // 1. Prefetch (Direct Command)
             if sra_file.exists() && sra_file.metadata()?.len() > 0 {
                 info!("⏩ [{}] SRA file exists, skipping download.", run_id);
@@ -54,10 +57,14 @@ pub async fn download_all(
                 // Direct execution
                 let output = Command::new(&prefetch)
                     .arg(&run_id)
-                    .arg("-O").arg(".")
-                    .arg("--max-size").arg(&max_size_arg)
-                    .arg("--verify").arg("yes")
-                    .arg("--force").arg("no")
+                    .arg("-O")
+                    .arg(".")
+                    .arg("--max-size")
+                    .arg(&max_size_arg)
+                    .arg("--verify")
+                    .arg("yes")
+                    .arg("--force")
+                    .arg("no")
                     .current_dir(&output_dir)
                     .stdout(Stdio::null())
                     .stderr(Stdio::piped())
@@ -74,16 +81,20 @@ pub async fn download_all(
             // 2. Convert (Direct Command)
             let fq_1 = output_dir.join(format!("{}_1.fastq", run_id));
             let fq_single = output_dir.join(format!("{}.fastq", run_id));
-            
-            if (fq_1.exists() && fq_1.metadata()?.len() > 0) || (fq_single.exists() && fq_single.metadata()?.len() > 0) {
-                 info!("⏩ [{}] FASTQ files exist, skipping conversion.", run_id);
+
+            if (fq_1.exists() && fq_1.metadata()?.len() > 0)
+                || (fq_single.exists() && fq_single.metadata()?.len() > 0)
+            {
+                info!("⏩ [{}] FASTQ files exist, skipping conversion.", run_id);
             } else {
                 info!("🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
                 // Direct execution
                 let output = Command::new(&fasterq_dump)
                     .arg("--split-3")
-                    .arg("-e").arg(threads.to_string())
-                    .arg("-O").arg(".")
+                    .arg("-e")
+                    .arg(threads.to_string())
+                    .arg("-O")
+                    .arg(".")
                     .arg("-f")
                     .arg(&relative_sra_path)
                     .current_dir(&output_dir)
@@ -94,33 +105,48 @@ pub async fn download_all(
 
                 match output {
                     Ok(out) if !out.status.success() => {
-                         warn!("⚠️ [{}] fasterq-dump error: {}. Checking output...", run_id, String::from_utf8_lossy(&out.stderr));
-                    },
-                    Ok(_) => {},
+                        warn!(
+                            "⚠️ [{}] fasterq-dump error: {}. Checking output...",
+                            run_id,
+                            String::from_utf8_lossy(&out.stderr)
+                        );
+                    }
+                    Ok(_) => {}
                     Err(e) => warn!("⚠️ [{}] fasterq-dump exec error: {}", run_id, e),
                 }
             }
 
             // 3. Compress
-            if (fq_1.exists() && fq_1.metadata()?.len() > 0) || (fq_single.exists() && fq_single.metadata()?.len() > 0) {
+            if (fq_1.exists() && fq_1.metadata()?.len() > 0)
+                || (fq_single.exists() && fq_single.metadata()?.len() > 0)
+            {
                 info!("📦 [{}] Step 3: Compressing...", run_id);
                 let output_dir_compress = output_dir.clone();
                 let run_id_compress = run_id.clone();
                 let threads_compress = threads;
                 tokio::task::spawn_blocking(move || {
-                    crate::compress_fastq_files(&output_dir_compress, &run_id_compress, threads_compress, None)
+                    crate::compress_fastq_files(
+                        &output_dir_compress,
+                        &run_id_compress,
+                        threads_compress,
+                        None,
+                    )
                 })
                 .await
                 .context("Compression task panicked")?
                 .context("Compression failed")?;
 
                 if cleanup_sra && sra_file.exists() {
-                    info!("🧹 [{}] Cleaning up SRA file: {}", run_id, sra_file.display());
+                    info!(
+                        "🧹 [{}] Cleaning up SRA file: {}",
+                        run_id,
+                        sra_file.display()
+                    );
                     if let Err(e) = tokio::fs::remove_file(&sra_file).await {
                         warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
                     }
                 }
-                
+
                 info!("✅ [{}] All steps completed!", run_id);
                 Ok(())
             } else {

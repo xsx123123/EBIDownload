@@ -3,9 +3,10 @@ use chrono::Local;
 use clap::Parser;
 use clap::Subcommand;
 use csv::WriterBuilder;
-use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, MultiProgress, ProgressBar};
 use regex::Regex;
 
+use nu_ansi_term::Color;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,7 +16,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, Event, Subscriber};
+use tracing_subscriber::fmt::format::{FormatEvent, FormatFields, Writer};
+use tracing_subscriber::fmt::FmtContext;
+use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use ebidownload_core::progress_store::{
@@ -25,7 +29,7 @@ use ebidownload_core::*;
 
 mod http_server;
 
-const VERSION: &str = "1.4.0";
+const VERSION: &str = "1.4.1";
 const SCRIPT_NAME: &str = "EBIDownload";
 
 use clap::builder::styling::{AnsiColor, Effects, Styles};
@@ -37,7 +41,7 @@ const HELP_LOGO: &str = "\n\n\x1b[1;37m    ███████╗████�
 \x1b[1;37m    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝\x1b[0m\n\
 \x1b[1;37m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ \x1b[0m\n\
                                                                           \n\
-\x1b[1;37m              🧬  EMBL-ENA Data Toolkit   |  v1.4.0\x1b[0m";
+\x1b[1;37m              🧬  EMBL-ENA Data Toolkit   |  v1.4.1\x1b[0m";
 
 const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
@@ -449,6 +453,79 @@ impl Drop for MpWriter {
     }
 }
 
+/// 自定义日志 formatter，为终端输出提供类似 Python colorlog 的配色：
+/// - 时间戳：紫色
+/// - 日志级别：TRACE 灰 / DEBUG 青 / INFO 绿 / WARN 黄 / ERROR 红
+/// - target（模块名）：青色
+/// - 消息体：终端默认颜色
+///
+/// 文件日志仍使用 `with_ansi(false)` 的纯文本 formatter，避免 ANSI 转义码污染 log 文件。
+struct ColoredFormatter;
+
+impl<S, N> FormatEvent<S, N> for ColoredFormatter
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> std::fmt::Result {
+        let use_color = writer.has_ansi_escapes();
+
+        // 时间戳 [HH:MM:SS]
+        let now = Local::now().format("%H:%M:%S");
+        if use_color {
+            write!(writer, "{} ", Color::Purple.paint(format!("[{}]", now)))?;
+        } else {
+            write!(writer, "[{}] ", now)?;
+        }
+
+        // 日志级别，左对齐 5 位
+        let level = event.metadata().level();
+        let level_text = format!("{:<5}", level);
+        if use_color {
+            let level_color = match *level {
+                tracing::Level::TRACE => Color::Fixed(8), // 灰色
+                tracing::Level::DEBUG => Color::Cyan,
+                tracing::Level::INFO => Color::Green,
+                tracing::Level::WARN => Color::Yellow,
+                tracing::Level::ERROR => Color::Red,
+            };
+            write!(writer, "{} ", level_color.paint(level_text))?;
+        } else {
+            write!(writer, "{} ", level_text)?;
+        }
+
+        // target / 模块名，取路径最后一段，青色，宽度 12 字符，过长截断
+        let target = event.metadata().target();
+        let target_short = target
+            .rsplit_once("::")
+            .map(|(_, name)| name)
+            .unwrap_or(target);
+        let target_display = if target_short.len() > 12 {
+            &target_short[..12]
+        } else {
+            target_short
+        };
+        if use_color {
+            write!(
+                writer,
+                "{} ",
+                Color::Cyan.paint(format!("[{:<12}]", target_display))
+            )?;
+        } else {
+            write!(writer, "[{:<12}] ", target_display)?;
+        }
+
+        // 消息体及字段，使用 compact field formatter
+        ctx.format_fields(writer.by_ref(), event)?;
+        writeln!(writer)
+    }
+}
+
 // Network health check
 async fn check_network_health() {
     info!("🏥 Performing network connectivity check...");
@@ -473,7 +550,7 @@ async fn check_network_health() {
                 info!("   ✅ {} is reachable.", name);
             }
             Err(e) => {
-                warn!("   ⚠️  {} is NOT reachable! ({})", name, e);
+                warn!("   ⚠️  {} is NOT reachable!", name);
                 if e.is_connect() || e.is_timeout() {
                     warn!("      👉 Hint: Check DNS (/etc/resolv.conf) or Proxy (export https_proxy=...).");
                 }
@@ -743,12 +820,7 @@ async fn run_deps(args: &DepsArgs, cli: &Cli) -> Result<()> {
     match &args.command {
         DepsSubcommand::Install { version, url, yaml } => {
             let pb = ProgressBar::new(0);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {percent}%) {msg}")
-                    .unwrap()
-                    .progress_chars("#>-"),
-            );
+            pb.set_style(ebidownload_core::progress::transfer_bar_style());
             let pb_for_cb = pb.clone();
             let progress_cb: DepProgressCallback = Arc::new(move |event| match event {
                 DepProgressEvent::DownloadStarted { url, size } => {
@@ -862,12 +934,6 @@ fn setup_logging(
     accession: Option<&str>,
 ) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, Layer};
-    struct LocalTimer;
-    impl fmt::time::FormatTime for LocalTimer {
-        fn format_time(&self, w: &mut fmt::format::Writer<'_>) -> std::fmt::Result {
-            write!(w, "{}", Local::now().format("%Y-%m-%d %H:%M:%S"))
-        }
-    }
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
     let log_name = if let Some(acc) = accession {
         format!("{}_{}_{}.log", SCRIPT_NAME, acc, timestamp)
@@ -913,12 +979,9 @@ fn setup_logging(
         }
         LogFormat::Text => {
             let stdout_layer = fmt::layer()
-                .with_writer(|| MpWriter { buf: Vec::new() })
-                .with_ansi(false)
-                .with_target(false)
-                .with_thread_ids(false)
-                .with_timer(LocalTimer)
                 .compact()
+                .event_format(ColoredFormatter)
+                .with_writer(|| MpWriter { buf: Vec::new() })
                 .with_filter(stdout_filter);
 
             let subscriber = tracing_subscriber::registry()
