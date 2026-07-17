@@ -11,9 +11,12 @@ By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra
 
 ## What's New in v1.4.1
 
+- **Apple-inspired GUI redesign**: The desktop app now uses a system-font type scale, translucent “glass” cards (`backdrop-filter`), sticky segmented tabs, pill-shaped buttons with instant press-scale feedback, and a soft ambient background. Light/dark themes keep Apple system colors (`#007AFF` / `#0A84FF`). Accessibility hooks honor `prefers-reduced-motion`, `prefers-reduced-transparency`, and `prefers-contrast`.
+- **CLI terminal UI polish**: Aligned ASCII banner, centered log targets, segmented status-bar colors, finer Unicode progress bars, and cleaner validate/md5 summary lines.
 - **Public Data Download**: New `public-data` subcommand to download public reference databases from configured S3 sources.
 - **Colored Terminal Logging**: Logs now use a colorized format (timestamp purple, level auto-colored, module cyan) while log files remain plain text.
 - **Cleaner Progress Messages**: Progress messages are now consistently formatted through `tracing`.
+- **md5 subcommand**: Generate and verify multi-threaded MD5 checksums for downloaded files from the CLI.
 
 ## What's New in v1.4.0
 
@@ -47,6 +50,7 @@ By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra
 - **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
 - **Real-time Progress (GUI)**: Visual progress bars, per-run download speed, smooth overall progress, download queue management, and live log streaming in the desktop application.
 - **Pause / Stop Downloads (GUI)**: Pause and resume AWS downloads, or stop any in-progress download.
+- **Apple-inspired Desktop UI (GUI)**: Glass materials, segmented navigation, system typography, and press-responsive controls designed for a fluid macOS/Windows/Linux experience.
 - **Light / Dark Themes (GUI)**: One-click theme toggle in the header; choice is persisted across sessions and follows the system theme on first launch.
 - **Automatic Dependency Management**: One-click or CLI-driven installation of `sra-tools`; the GUI checks for dependencies on startup.
 - **Auto-Collapse UI During Download**: Configuration cards fold away and the progress panel expands automatically when a download starts.
@@ -339,7 +343,7 @@ npm run tauri dev
 | **Settings** | Visually configure paths for `prefetch`, `fasterq-dump`, and other software executables. |
 | **About** | Software information, version, a "View on GitHub" link to the [project repository](https://github.com/xsx123123/EBIDownload), and a reflection on the atoms that make us all. |
 
-A circular **theme toggle button** in the top-right corner of the header switches between dark and light modes. Your preference is stored locally and restored on the next launch.
+A circular **theme toggle button** in the top-right corner of the header switches between dark and light modes. Your preference is stored locally and restored on the next launch. The UI follows an **Apple-inspired design language**: translucent cards, sticky segmented tabs, pill buttons with press feedback, and system fonts with careful tracking/leading.
 
 **Features:**
 - Automatic dependency detection: checks for `sra-tools` on startup and offers one-click installation if missing
@@ -351,6 +355,7 @@ A circular **theme toggle button** in the top-right corner of the header switche
 - Auto-collapse configuration cards and auto-expand progress panel when a download starts
 - Dry-run mode to preview what would be downloaded
 - Support for TSV file input (batch download)
+- Accessibility: reduced-motion, reduced-transparency, and high-contrast media queries
 
 ---
 
@@ -449,6 +454,33 @@ blastdbcmd -db <output_dir>/nr -dbtype prot -info
 ```
 
 Replace `<output_dir>/nt` or `<output_dir>/nr` with the actual path to the database prefix (the part before `.phr`/`.psq`/`.pin`). If these commands exit successfully, the database is ready to use.
+
+##### Taxonomy database (`taxdb`) for BLAST
+
+After downloading `nt` / `nr` with EBIDownload, BLAST may still report:
+
+```text
+BLASTDB::ncbi::CSeqDBImpl::GetTaxInfo() - Taxid 9606 not found
+```
+
+This means the sequence database is present, but the separate NCBI **taxonomy database** (`taxdb`) is missing from the same directory. Download and unpack it next to your BLAST DB files:
+
+```bash
+# Run inside the directory that holds your nt / nr database files
+cd /path/to/your/blast/db
+
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/taxdb.tar.gz
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/taxdb.tar.gz.md5
+
+# Optional: verify the archive
+md5sum -c taxdb.tar.gz.md5
+
+tar -xzf taxdb.tar.gz
+```
+
+After extraction, files such as `taxdb.bti` / `taxdb.btd` should sit alongside `nt.*` or `nr.*`. Re-run your BLAST search; taxonomy lookups (including taxid `9606`) should then succeed.
+
+> **Note**: `taxdb` is not part of the `nt` / `nr` volume set on S3. You only need to install it once per database directory (or set `BLASTDB` so BLAST can find a shared `taxdb` location).
 
 #### c. Download Examples
 
