@@ -254,7 +254,7 @@ pub async fn install_sra_tools(
     };
 
     info!(
-        "📦 Installing sra-tools {} for platform {} from {}",
+        "Installing sra-tools {} for platform {} from {}",
         release.version, release.platform, release.url
     );
 
@@ -310,7 +310,7 @@ pub async fn install_sra_tools(
     }
 
     info!(
-        "✅ sra-tools installed:\n   prefetch: {}\n   fasterq-dump: {}",
+        "sra-tools installed:\n   prefetch: {}\n   fasterq-dump: {}",
         paths.prefetch.display(),
         paths.fasterq_dump.display()
     );
@@ -397,7 +397,7 @@ async fn verify_download_checksum(archive_path: &Path, release: &SraToolsRelease
         ));
     }
 
-    info!("✅ Checksum verified: {}", actual_md5);
+    info!("Checksum verified: {}", actual_md5);
     Ok(())
 }
 
@@ -486,7 +486,7 @@ pub fn remove_sra_tools(version: &str) -> Result<()> {
     if dir.exists() {
         std::fs::remove_dir_all(&dir)
             .with_context(|| format!("Failed to remove {}", dir.display()))?;
-        info!("🗑️  Removed sra-tools {}", version);
+        info!("Removed sra-tools {}", version);
     } else {
         warn!("sra-tools {} is not installed", version);
     }
@@ -523,6 +523,6 @@ pub fn write_software_paths_to_yaml(yaml_path: &Path, paths: &SoftwarePaths) -> 
     std::fs::write(yaml_path, yaml)
         .with_context(|| format!("Failed to write {}", yaml_path.display()))?;
 
-    info!("📝 Updated configuration: {}", yaml_path.display());
+    info!("Updated configuration: {}", yaml_path.display());
     Ok(())
 }

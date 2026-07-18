@@ -145,7 +145,7 @@ impl Default for DownloadOptions {
             download_method: DownloadMethod::Aws,
             multithreads: 4,
             aws_threads: 8,
-            chunk_size: 20,
+            chunk_size: 200,
             prefetch_max_size: "100G".to_string(),
             pe_only: false,
             filter_sample: Vec::new(),
@@ -414,7 +414,7 @@ pub fn compress_fastq_files(
 
         let output_path = output_dir.join(format!("{}.gz", name));
         info!(
-            "📦 Compressing {} -> {}",
+            "Compressing {} -> {}",
             input_path.display(),
             output_path.display()
         );
@@ -504,7 +504,7 @@ pub fn generate_md5sum_file_at(md5_path: &Path, files: &[PathBuf]) -> Result<Pat
         writeln!(file, "{}  {}", hash, filename)?;
     }
 
-    info!("📝 MD5 manifest generated: {}", md5_path.display());
+    info!("MD5 manifest generated: {}", md5_path.display());
     Ok(md5_path.to_path_buf())
 }
 

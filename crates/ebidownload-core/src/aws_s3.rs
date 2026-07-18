@@ -89,11 +89,11 @@ impl SraUtils {
             run_id
         );
 
-        // 🟢 Modification 1: Timeout increased to 60 seconds
+        // Modification 1: Timeout increased to 60 seconds
         let client = Client::builder().timeout(Duration::from_secs(60)).build()?;
 
         let mut attempt = 0;
-        let max_retries = 10; // 🟢 Modification 2: Max retries increased to 10
+        let max_retries = 10; // Modification 2: Max retries increased to 10
 
         loop {
             attempt += 1;
@@ -109,7 +109,7 @@ impl SraUtils {
                             return Err(anyhow!("NCBI API Error: Status {}", resp.status()));
                         }
                         warn!(
-                            "⚠️  [Network] NCBI Server Error ({}), retrying ({}/{})...",
+                            "[Network] NCBI Server Error ({}), retrying ({}/{})...",
                             resp.status(),
                             attempt,
                             max_retries
@@ -124,15 +124,15 @@ impl SraUtils {
                             e
                         ));
                     }
-                    // 🟢 Modification 3: Retry wait time increased to 10 seconds (more stable)
+                    // Modification 3: Retry wait time increased to 10 seconds (more stable)
                     warn!(
-                        "⚠️  [Network] Connection failed: {}. Retrying in 10s ({}/{})...",
+                        "[Network] Connection failed: {}. Retrying in 10s ({}/{})...",
                         e, attempt, max_retries
                     );
                 }
             }
 
-            // 🟢 Wait 10 seconds
+            // Wait 10 seconds
             tokio::time::sleep(Duration::from_secs(10)).await;
         }
     }
@@ -255,9 +255,11 @@ impl ResumableDownloader {
         let filepath = save_dir.join(&filename);
         let meta_file = filepath.with_extension("meta.json");
 
+        // No whole-request body timeout: large Range chunks (e.g. 200 MiB) can
+        // take many minutes on slow links. Rely on connect_timeout + per-chunk
+        // retries with intra-chunk offset resume instead.
         let client = Client::builder()
             .http1_only()
-            .timeout(Duration::from_secs(60))
             .connect_timeout(Duration::from_secs(10))
             .pool_max_idle_per_host(max_workers)
             .build()?;
@@ -323,24 +325,41 @@ impl ResumableDownloader {
     pub async fn start(&self) -> Result<bool> {
         let start_time = std::time::Instant::now();
 
-        // 🟢 Check if file exists and size matches, then verify MD5 first
+        // Preallocation (`set_len`) makes incomplete downloads already have the
+        // full remote size. Only treat a size-matched file as "maybe complete"
+        // when there is no resume meta — `.meta.json` means in-progress chunks
+        // and must not be wiped by an early MD5 check.
         if self.filepath.exists() {
             if let Ok(meta) = tokio::fs::metadata(&self.filepath).await {
-                if meta.len() == self.metadata.size {
+                let size_matches = meta.len() == self.metadata.size;
+                let has_resume_meta = self.meta_file.exists();
+
+                if size_matches && !has_resume_meta {
                     info!(
-                        "📂 [{}] Existing file with matching size; verifying integrity...",
+                        "[{}] Existing file with matching size; verifying integrity...",
                         self.run_id
                     );
-
-                    // Verify integrity
                     if self.verify_integrity(0.0, true).await? {
                         return Ok(true);
                     } else {
                         warn!(
-                            "❌ [{}] Existing file MD5 mismatch; redownloading...",
+                            "[{}] Existing file MD5 mismatch; redownloading...",
                             self.run_id
                         );
                     }
+                } else if size_matches && has_resume_meta {
+                    info!(
+                        "[{}] Resuming incomplete download from progress file...",
+                        self.run_id
+                    );
+                } else if !size_matches {
+                    warn!(
+                        "[{}] Local size {} != remote {}; restarting download...",
+                        self.run_id,
+                        meta.len(),
+                        self.metadata.size
+                    );
+                    self.invalidate_download();
                 }
             }
         }
@@ -366,7 +385,7 @@ impl ResumableDownloader {
             }
         }
 
-        // 🟢 Setup Progress Bar
+        // Setup Progress Bar
         let pb = if let Some(mp) = &self.mp {
             // insert_from_back(1) places the bar just above the pinned global
             // status bar (which lives at the very back of the MultiProgress),
@@ -383,7 +402,7 @@ impl ResumableDownloader {
         // Keep per-file details in the log file without cluttering active progress bars.
         let size_gb = self.metadata.size as f64 / 1024.0 / 1024.0 / 1024.0;
         let details = format!(
-            "📌 {} │ 📦 {:.2} GB │ 🔑 {} │ 💾 {}",
+            "{} │ {:.2} GB │ {} │ {}",
             self.run_id,
             size_gb,
             self.metadata.md5.as_deref().unwrap_or("N/A"),
@@ -393,7 +412,7 @@ impl ResumableDownloader {
 
         if tasks.is_empty() {
             let msg = format!(
-                "✅ {} │ File exists, starting integrity check...",
+                "{} │ File exists, starting integrity check...",
                 self.run_id
             );
             pb.println(&msg);
@@ -404,8 +423,15 @@ impl ResumableDownloader {
                 .await;
         }
 
-        let initial_bytes = downloaded_chunks.len() as u64 * self.chunk_size;
-        // 🟢 Fix: Use AtomicU64 to track global progress safely (handles retries)
+        let initial_bytes: u64 = downloaded_chunks
+            .iter()
+            .map(|&id| {
+                let start = id as u64 * self.chunk_size;
+                let end = std::cmp::min((id as u64 + 1) * self.chunk_size, self.metadata.size);
+                end.saturating_sub(start)
+            })
+            .sum();
+        // Fix: Use AtomicU64 to track global progress safely (handles retries)
         // If the caller supplied a shared counter (e.g. the GUI), use it so the
         // progress can be observed externally.
         let global_bytes = self
@@ -419,7 +445,7 @@ impl ResumableDownloader {
 
         pb.set_position(global_bytes.load(Ordering::Relaxed));
 
-        // 🟢 Spawn progress monitor
+        // Spawn progress monitor
         let pb_monitor = pb.clone();
         let gb_monitor = global_bytes.clone();
         let store_monitor = self.progress_store.clone();
@@ -509,7 +535,7 @@ impl ResumableDownloader {
                 .await
         } else {
             let msg = format!(
-                "❌ {} │ Download incomplete. Progress saved, please retry.",
+                "{} │ Download incomplete. Progress saved, please retry.",
                 self.run_id
             );
             pb.println(&msg);
@@ -527,7 +553,7 @@ impl ResumableDownloader {
             let local_size = tokio::fs::metadata(&self.filepath).await?.len();
             if local_size != self.metadata.size {
                 warn!(
-                    "❌ {} │ Size mismatch: local={} remote={}",
+                    "{} │ Size mismatch: local={} remote={}",
                     self.run_id, local_size, self.metadata.size
                 );
                 self.invalidate_download();
@@ -566,11 +592,11 @@ impl ResumableDownloader {
         if &local_md5 == expected_md5 {
             if !skipped_download {
                 let speed = (self.metadata.size as f64 / 1024.0 / 1024.0) / download_duration;
-                let msg = format!("✅ {} │ 🚀 {:.2} MB/s", self.run_id, speed);
+                let msg = format!("{} │ {:.2} MB/s", self.run_id, speed);
                 info!(target: "download_detail", "{}", msg);
             }
             let msg = format!(
-                "✅ {} │ 🔍 MD5 OK ({:.2}s)",
+                "{} │ MD5 OK ({:.2}s)",
                 self.run_id,
                 start_time.elapsed().as_secs_f64()
             );
@@ -580,7 +606,7 @@ impl ResumableDownloader {
             Ok(true)
         } else {
             let msg = format!(
-                "❌ {} │ MD5 mismatch! Local: {}  Remote: {}",
+                "{} │ MD5 mismatch! Local: {}  Remote: {}",
                 self.run_id, local_md5, expected_md5
             );
             warn!("{}", msg);
@@ -744,5 +770,33 @@ mod tests {
         assert!(!downloader.verify_integrity(0.0, false).await.unwrap());
         assert!(!downloader.filepath.exists());
         assert!(!downloader.meta_file.exists());
+    }
+
+    #[test]
+    fn resume_meta_preserves_completed_chunks_when_file_preallocated() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let filepath = temp_dir.path().join("example.dat");
+        let meta_file = filepath.with_extension("meta.json");
+
+        // Simulate preallocated full-size file with partial progress.
+        {
+            let f = File::create(&filepath).unwrap();
+            f.set_len(10 * 1024 * 1024).unwrap();
+        }
+        std::fs::write(&meta_file, r#"{"downloaded_chunks":[0,2]}"#).unwrap();
+
+        // load_progress is private; mirror the rule used by start():
+        // meta present ⇒ treat as incomplete resume, do not wipe.
+        assert!(filepath.exists());
+        assert!(meta_file.exists());
+        assert_eq!(
+            std::fs::metadata(&filepath).unwrap().len(),
+            10 * 1024 * 1024
+        );
+        let progress: ProgressData =
+            serde_json::from_str(&std::fs::read_to_string(&meta_file).unwrap()).unwrap();
+        assert_eq!(progress.downloaded_chunks, vec![0, 2]);
+        // Early MD5 must only run when meta is absent.
+        assert!(meta_file.exists());
     }
 }

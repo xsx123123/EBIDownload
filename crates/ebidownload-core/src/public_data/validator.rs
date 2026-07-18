@@ -104,15 +104,15 @@ pub async fn validate_all_volumes(
 
         match validate_blast_volume(&prefix, dbtype, tool_path).await {
             Ok(true) => {
-                info!("✅ {:<8} validated", name);
+                info!("{:<8} validated", name);
                 passed += 1;
             }
             Ok(false) => {
-                warn!("❌ {:<8} corrupted", name);
+                warn!("{:<8} corrupted", name);
                 failed += 1;
             }
             Err(e) => {
-                warn!("❌ {:<8} validation error: {}", name, e);
+                warn!("{:<8} validation error: {}", name, e);
                 failed += 1;
             }
         }
@@ -146,11 +146,11 @@ where
 
         match validate_blast_volume(volume_prefix, dbtype, tool_path).await? {
             true => {
-                info!("✅ {:<8} validated", volume_name);
+                info!("{:<8} validated", volume_name);
                 return Ok(());
             }
             false => {
-                warn!("❌ {:<8} corrupted", volume_name);
+                warn!("{:<8} corrupted", volume_name);
                 attempts += 1;
                 if attempts > max_retries {
                     return Err(anyhow!(
@@ -159,7 +159,7 @@ where
                     ));
                 }
                 info!(
-                    "🔄 {} validation failed ({}/{}), re-downloading in {}s",
+                    "{} validation failed ({}/{}), re-downloading in {}s",
                     volume_name, attempts, max_retries, retry_delay_seconds
                 );
                 sleep(Duration::from_secs(retry_delay_seconds)).await;

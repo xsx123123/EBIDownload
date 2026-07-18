@@ -50,7 +50,7 @@ pub async fn run_upload(
     dry_run: bool,
     progress_cb: Option<UploadProgressCallback>,
 ) -> Result<()> {
-    info!("📤 Starting S3 upload workflow...");
+    info!("Starting S3 upload workflow...");
     info!("   Bucket: {}", bucket);
     if let Some(p) = prefix {
         info!("   Prefix: {}", p);
@@ -64,7 +64,7 @@ pub async fn run_upload(
     // Warn if region is not us-east-1 (NCBI requirement)
     if region != "us-east-1" {
         warn!(
-            "⚠️  S3 bucket region is '{}', but NCBI SRA requires 'us-east-1' (US East - N. Virginia).",
+            "S3 bucket region is '{}', but NCBI SRA requires 'us-east-1' (US East - N. Virginia).",
             region
         );
         warn!("   Buckets in other regions will NOT be accepted by the SRA Submission Portal.");
@@ -90,7 +90,7 @@ pub async fn run_upload(
         return Err(anyhow!("No valid files to upload"));
     }
 
-    info!("📦 Files to upload: {}", file_list.len());
+    info!("Files to upload: {}", file_list.len());
     for (path, size) in &file_list {
         info!(
             "   - {} ({})",
@@ -105,7 +105,7 @@ pub async fn run_upload(
     }
 
     if dry_run {
-        info!("🏜️  Dry Run completed. No files were uploaded.");
+        info!("Dry Run completed. No files were uploaded.");
         return Ok(());
     }
 
@@ -117,13 +117,13 @@ pub async fn run_upload(
         apply_ncbi_bucket_policy(&client, bucket).await?;
     }
 
-    info!("🎉 Upload workflow completed successfully!");
+    info!("Upload workflow completed successfully!");
     Ok(())
 }
 
 /// Check if S3 bucket exists and is accessible
 async fn check_bucket(client: &aws_sdk_s3::Client, bucket: &str) -> Result<()> {
-    info!("🔍 Checking bucket accessibility: {}", bucket);
+    info!("Checking bucket accessibility: {}", bucket);
     client
         .head_bucket()
         .bucket(bucket)
@@ -137,7 +137,7 @@ async fn check_bucket(client: &aws_sdk_s3::Client, bucket: &str) -> Result<()> {
                 e
             )
         })?;
-    info!("✅ Bucket is accessible");
+    info!("Bucket is accessible");
     Ok(())
 }
 
@@ -146,7 +146,7 @@ fn collect_files(files: &[PathBuf]) -> Result<Vec<(PathBuf, u64)>> {
     let mut file_list = Vec::new();
     for path in files {
         if !path.exists() {
-            warn!("⚠️  File not found, skipping: {}", path.display());
+            warn!("File not found, skipping: {}", path.display());
             continue;
         }
         let metadata = path
@@ -154,13 +154,13 @@ fn collect_files(files: &[PathBuf]) -> Result<Vec<(PathBuf, u64)>> {
             .context(format!("Failed to read file metadata: {}", path.display()))?;
         if metadata.is_dir() {
             warn!(
-                "⚠️  Skipping directory (not supported yet): {}",
+                "Skipping directory (not supported yet): {}",
                 path.display()
             );
             continue;
         }
         if metadata.len() == 0 {
-            warn!("⚠️  Skipping empty file: {}", path.display());
+            warn!("Skipping empty file: {}", path.display());
             continue;
         }
         file_list.push((path.clone(), metadata.len()));
@@ -177,7 +177,7 @@ async fn upload_files(
     concurrent: usize,
     progress_cb: Option<UploadProgressCallback>,
 ) -> Result<()> {
-    info!("📤 Uploading {} files to S3...", files.len());
+    info!("Uploading {} files to S3...", files.len());
 
     let semaphore = Arc::new(Semaphore::new(concurrent));
     let mp = Arc::new(MultiProgress::new());
@@ -233,7 +233,7 @@ async fn upload_files(
                     }
                 }
                 Err(e) => {
-                    error!("❌ Failed to upload {}: {}", filename, e);
+                    error!("Failed to upload {}: {}", filename, e);
                     fail_count.fetch_add(1, Ordering::Relaxed);
                     if let Some(cb) = &progress_cb {
                         cb(UploadProgressEvent {
@@ -259,7 +259,7 @@ async fn upload_files(
     let failed = fail_count.load(Ordering::Relaxed);
 
     info!(
-        "📊 Upload results: {} succeeded, {} failed (total: {})",
+        "Upload results: {} succeeded, {} failed (total: {})",
         success,
         failed,
         files.len()
@@ -306,9 +306,9 @@ async fn upload_single_file(
         .context(format!("S3 PutObject failed for: {}", filename))?;
 
     pb.set_position(size);
-    pb.finish_with_message(format!("✅ {}", filename));
+    pb.finish_with_message(format!("{}", filename));
     info!(
-        "   ✅ Uploaded: {} → s3://{}/{} ({})",
+        "   Uploaded: {} → s3://{}/{} ({})",
         filename,
         bucket,
         key,
@@ -322,7 +322,7 @@ async fn upload_single_file(
 /// Adds s3:ListBucket and s3:GetObject permissions for the NCBI SRA IAM user,
 /// allowing NCBI to read files directly from your bucket for SRA submission.
 async fn apply_ncbi_bucket_policy(client: &aws_sdk_s3::Client, bucket: &str) -> Result<()> {
-    info!("🔐 Configuring NCBI SRA Submission Bucket Policy...");
+    info!("Configuring NCBI SRA Submission Bucket Policy...");
     info!("   Principal: {}", NCBI_SRA_IAM_ARN);
     info!("   Actions: s3:ListBucket, s3:GetObject");
 
@@ -370,7 +370,7 @@ async fn apply_ncbi_bucket_policy(client: &aws_sdk_s3::Client, bucket: &str) -> 
     let policy_doc = if let Some(mut existing) = existing_policy {
         // Check if NCBI policy already exists
         if has_ncbi_sra_statement(&existing) {
-            info!("   ✅ NCBI SRA submission policy already exists, skipping");
+            info!("   NCBI SRA submission policy already exists, skipping");
             return Ok(());
         }
 
@@ -398,8 +398,8 @@ async fn apply_ncbi_bucket_policy(client: &aws_sdk_s3::Client, bucket: &str) -> 
         .await
         .context("Failed to apply bucket policy")?;
 
-    info!("   ✅ NCBI SRA submission bucket policy applied successfully");
-    info!("   📋 Next steps:");
+    info!("   NCBI SRA submission bucket policy applied successfully");
+    info!("   Next steps:");
     info!("      1. Go to https://submit.ncbi.nlm.nih.gov/subs/sra/");
     info!("      2. In the file upload step, select 'Upload from Amazon S3 storage'");
     info!(
@@ -443,7 +443,7 @@ fn generate_metadata_template(
     bucket: &str,
     prefix: &Option<String>,
 ) -> Result<()> {
-    info!("📝 Generating SRA metadata template: {}", path.display());
+    info!("Generating SRA metadata template: {}", path.display());
 
     let mut file =
         File::create(path).context(format!("Failed to create metadata template: {:?}", path))?;
@@ -487,10 +487,10 @@ fn generate_metadata_template(
     }
 
     info!(
-        "   ✅ Metadata template saved: {} ({} file entries)",
+        "   Metadata template saved: {} ({} file entries)",
         path.display(),
         files.len()
     );
-    info!("   📋 Fill in the empty columns before submitting to NCBI SRA");
+    info!("   Fill in the empty columns before submitting to NCBI SRA");
     Ok(())
 }

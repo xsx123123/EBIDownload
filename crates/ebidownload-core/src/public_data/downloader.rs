@@ -18,7 +18,7 @@ use tracing::{info, warn};
 
 const DEFAULT_FILE_WORKERS: usize = 8;
 const DEFAULT_INNER_WORKERS: usize = 4;
-const DEFAULT_CHUNK_SIZE_MB: u64 = 64;
+const DEFAULT_CHUNK_SIZE_MB: u64 = 200;
 
 #[derive(Debug, Clone)]
 struct PublicObject {
@@ -182,7 +182,7 @@ impl PublicDataDownloader {
             .with_context(|| format!("Invalid S3 URL for public database '{name}'"))?;
 
         info!(
-            "📚 Downloading public database '{}' ({}) from {}",
+            "Downloading public database '{}' ({}) from {}",
             name, database.description, database.s3_url
         );
 
@@ -196,7 +196,7 @@ impl PublicDataDownloader {
                 let object = self.head_object(&source.bucket, &source.key).await?;
                 if dry_run {
                     info!(
-                        "🏜️ Would download s3://{}/{} ({})",
+                        "Would download s3://{}/{} ({})",
                         source.bucket,
                         source.key,
                         HumanBytes(object.size)
@@ -215,9 +215,9 @@ impl PublicDataDownloader {
                     warn!("No objects matched public database '{}'", name);
                     return Ok(());
                 }
-                info!("📦 '{}' contains {} matching objects", name, objects.len());
+                info!("'{}' contains {} matching objects", name, objects.len());
                 if dry_run {
-                    info!("🏜️ Dry-run mode: no public data will be downloaded");
+                    info!("Dry-run mode: no public data will be downloaded");
                     for object in &objects {
                         info!("   - {} ({})", object.key, HumanBytes(object.size));
                     }
@@ -255,7 +255,7 @@ impl PublicDataDownloader {
                     tool_path.map(|p| p.as_path()),
                 )
                 .await?;
-                info!("📝 Generating MD5 manifest for '{}'", name);
+                info!("Generating MD5 manifest for '{}'", name);
                 self.generate_md5_manifest(output_dir, name, &objects)
             }
         }
@@ -441,11 +441,11 @@ impl PublicDataDownloader {
                 .await
                 {
                     Ok(true) => {
-                        info!("✅ {:<8} validated", volume.name);
+                        info!("{:<8} validated", volume.name);
                         break;
                     }
                     Ok(false) => {
-                        warn!("❌ {:<8} corrupted", volume.name);
+                        warn!("{:<8} corrupted", volume.name);
                         attempts += 1;
                         if attempts >= max_attempts {
                             return Err(volume.failure(
@@ -457,7 +457,7 @@ impl PublicDataDownloader {
                             ));
                         }
                         info!(
-                            "🔄 {} validation failed ({}/{}), re-downloading in {}s",
+                            "{} validation failed ({}/{}), re-downloading in {}s",
                             volume.name, attempts, cfg.max_retries, cfg.retry_delay_seconds
                         );
                         sleep(Duration::from_secs(cfg.retry_delay_seconds)).await;
@@ -598,7 +598,7 @@ impl PublicDataDownloader {
             writeln!(file)?;
         }
         warn!(
-            "📝 Failed volumes manifest written: {} ({} volumes)",
+            "Failed volumes manifest written: {} ({} volumes)",
             manifest_path.display(),
             failures.len()
         );

@@ -177,7 +177,7 @@ pub async fn generate_md5_manifest(
         return Ok(());
     }
 
-    info!("🔐 Computing MD5 for {} file(s) using {} thread(s)", files.len(), threads.max(1));
+    info!("Computing MD5 for {} file(s) using {} thread(s)", files.len(), threads.max(1));
 
     let semaphore = Arc::new(Semaphore::new(threads.max(1)));
     let mut handles = Vec::with_capacity(files.len());
@@ -227,7 +227,7 @@ pub async fn generate_md5_manifest(
             .with_context(|| format!("Failed to write to {}", output.display()))?;
     }
 
-    info!("📝 MD5 manifest written: {}", output.display());
+    info!("MD5 manifest written: {}", output.display());
     Ok(())
 }
 
@@ -266,7 +266,7 @@ pub async fn verify_md5_manifest(
     });
     if !skipped.is_empty() {
         info!(
-            "⏭️  Skipping {} tool artifact entr{} ({} logs / manifest itself)",
+            "Skipping {} tool artifact entr{} ({} logs / manifest itself)",
             skipped.len(),
             if skipped.len() == 1 { "y" } else { "ies" },
             MD5_LOG_PREFIX
@@ -281,7 +281,7 @@ pub async fn verify_md5_manifest(
     }
 
     info!(
-        "🔐 Verifying {} file(s) from {} using {} thread(s)",
+        "Verifying {} file(s) from {} using {} thread(s)",
         entries.len(),
         md5_path.display(),
         threads.max(1)
@@ -331,16 +331,16 @@ pub async fn verify_md5_manifest(
 
         match actual_md5 {
             None => {
-                warn!("❌ {} missing", filename);
+                warn!("{} missing", filename);
                 failed += 1;
             }
             Some(actual) if actual == expected_md5 => {
-                info!("✅ {} OK", filename);
+                info!("{} OK", filename);
                 passed += 1;
             }
             Some(actual) => {
                 warn!(
-                    "❌ {} MD5 mismatch: expected {} got {}",
+                    "{} MD5 mismatch: expected {} got {}",
                     filename, expected_md5, actual
                 );
                 failed += 1;

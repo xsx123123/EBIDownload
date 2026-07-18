@@ -13,12 +13,12 @@ pub async fn download_all(
     output_dir: &Path,
     file_threads: usize,
     process_threads: usize,
-    max_size: &str, // 🟢 New param: Receive max-size string
+    max_size: &str, // New param: Receive max-size string
     cleanup_sra: bool,
 ) -> Result<()> {
-    info!("📦 Starting Prefetch pipeline...");
+    info!("Starting Prefetch pipeline...");
     info!(
-        "⚙️  Config: Parallel Files = {}, Threads/Process = {}, Max Size = {}",
+        "Config: Parallel Files = {}, Threads/Process = {}, Max Size = {}",
         file_threads, process_threads, max_size
     );
 
@@ -51,9 +51,9 @@ pub async fn download_all(
 
             // 1. Prefetch (Direct Command)
             if sra_file.exists() && sra_file.metadata()?.len() > 0 {
-                info!("⏩ [{}] SRA file exists, skipping download.", run_id);
+                info!("[{}] SRA file exists, skipping download.", run_id);
             } else {
-                info!("📥 [{}] Step 1: Prefetching...", run_id);
+                info!("[{}] Step 1: Prefetching...", run_id);
                 // Direct execution
                 let output = Command::new(&prefetch)
                     .arg(&run_id)
@@ -73,7 +73,7 @@ pub async fn download_all(
 
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    error!("❌ Prefetch failed for {}\nError: {}", run_id, stderr);
+                    error!("Prefetch failed for {}\nError: {}", run_id, stderr);
                     return Err(anyhow::anyhow!("Prefetch failed"));
                 }
             }
@@ -85,9 +85,9 @@ pub async fn download_all(
             if (fq_1.exists() && fq_1.metadata()?.len() > 0)
                 || (fq_single.exists() && fq_single.metadata()?.len() > 0)
             {
-                info!("⏩ [{}] FASTQ files exist, skipping conversion.", run_id);
+                info!("[{}] FASTQ files exist, skipping conversion.", run_id);
             } else {
-                info!("🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
+                info!("[{}] Step 2: Converting (fasterq-dump)...", run_id);
                 // Direct execution
                 let output = Command::new(&fasterq_dump)
                     .arg("--split-3")
@@ -106,13 +106,13 @@ pub async fn download_all(
                 match output {
                     Ok(out) if !out.status.success() => {
                         warn!(
-                            "⚠️ [{}] fasterq-dump error: {}. Checking output...",
+                            "[{}] fasterq-dump error: {}. Checking output...",
                             run_id,
                             String::from_utf8_lossy(&out.stderr)
                         );
                     }
                     Ok(_) => {}
-                    Err(e) => warn!("⚠️ [{}] fasterq-dump exec error: {}", run_id, e),
+                    Err(e) => warn!("[{}] fasterq-dump exec error: {}", run_id, e),
                 }
             }
 
@@ -120,7 +120,7 @@ pub async fn download_all(
             if (fq_1.exists() && fq_1.metadata()?.len() > 0)
                 || (fq_single.exists() && fq_single.metadata()?.len() > 0)
             {
-                info!("📦 [{}] Step 3: Compressing...", run_id);
+                info!("[{}] Step 3: Compressing...", run_id);
                 let output_dir_compress = output_dir.clone();
                 let run_id_compress = run_id.clone();
                 let threads_compress = threads;
@@ -138,19 +138,19 @@ pub async fn download_all(
 
                 if cleanup_sra && sra_file.exists() {
                     info!(
-                        "🧹 [{}] Cleaning up SRA file: {}",
+                        "[{}] Cleaning up SRA file: {}",
                         run_id,
                         sra_file.display()
                     );
                     if let Err(e) = tokio::fs::remove_file(&sra_file).await {
-                        warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
+                        warn!("[{}] Failed to remove SRA file: {}", run_id, e);
                     }
                 }
 
-                info!("✅ [{}] All steps completed!", run_id);
+                info!("[{}] All steps completed!", run_id);
                 Ok(())
             } else {
-                error!("❌ [{}] Conversion failed, no output found.", run_id);
+                error!("[{}] Conversion failed, no output found.", run_id);
                 Err(anyhow::anyhow!("Process failed for {}", run_id))
             }
         });
@@ -162,6 +162,6 @@ pub async fn download_all(
             warn!("Task error: {}", e);
         }
     }
-    info!("🎉 All Prefetch tasks completed");
+    info!("All Prefetch tasks completed");
     Ok(())
 }

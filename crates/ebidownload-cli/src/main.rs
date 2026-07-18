@@ -47,7 +47,7 @@ const HELP_LOGO: &str = "\n\n\
 \x1b[1;37m    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝\x1b[0m\n\
 \x1b[1;37m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝\x1b[0m\n\
 \n\
-\x1b[36m              🧬  EMBL-ENA Data Toolkit  │  v1.4.1\x1b[0m";
+\x1b[36m              EMBL-ENA Data Toolkit  │  v1.4.1\x1b[0m";
 
 const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
@@ -178,7 +178,7 @@ struct DownloadArgs {
     aws_threads: usize,
     #[arg(
         long = "chunk-size",
-        default_value = "20",
+        default_value = "200",
         help = "Chunk size in MB (AWS only)",
         help_heading = "Download Options"
     )]
@@ -275,7 +275,7 @@ struct PublicDataArgs {
     aws_threads: usize,
     #[arg(
         long = "chunk-size",
-        default_value = "64",
+        default_value = "200",
         help = "HTTP range chunk size in MB",
         help_heading = "Download Options"
     )]
@@ -656,7 +656,7 @@ where
 
 // Network health check
 async fn check_network_health() {
-    info!("🏥 Network connectivity check");
+    info!("Network connectivity check");
     let targets = vec![
         ("https://www.ebi.ac.uk", "EBI API"),
         ("https://eutils.ncbi.nlm.nih.gov", "NCBI API"),
@@ -668,7 +668,7 @@ async fn check_network_health() {
     {
         Ok(c) => c,
         Err(e) => {
-            warn!("⚠️  Failed to initialize network checker: {}", e);
+            warn!("Failed to initialize network checker: {}", e);
             return;
         }
     };
@@ -685,7 +685,7 @@ async fn check_network_health() {
             }
         }
     }
-    info!("🏥 Network check done — proceeding");
+    info!("Network check done — proceeding");
 }
 
 #[tokio::main]
@@ -719,7 +719,7 @@ async fn main() -> ExitCode {
     };
     if let Some(output) = download_output {
         if let Err(e) = fs::create_dir_all(output) {
-            eprintln!("❌ Failed to create output directory: {}", e);
+            eprintln!("Failed to create output directory: {}", e);
             return ExitCode::FAILURE;
         }
     }
@@ -738,7 +738,7 @@ async fn main() -> ExitCode {
             Commands::PublicData(_) | Commands::Validate(_) | Commands::Upload(_) | Commands::Deps(_) => None,
         },
     ) {
-        eprintln!("❌ Failed to setup logging: {}", e);
+        eprintln!("Failed to setup logging: {}", e);
         return ExitCode::FAILURE;
     }
 
@@ -764,7 +764,7 @@ async fn main() -> ExitCode {
     if let Err(e) = result {
         tracing::error!("Application failed: {:?}", e);
         eprintln!(
-            "\n❌ An error occurred. Please check the log file for detailed error information."
+            "\nAn error occurred. Please check the log file for detailed error information."
         );
         return ExitCode::FAILURE;
     }
@@ -829,7 +829,7 @@ async fn run_public_data(args: &PublicDataArgs, cli: &Cli) -> Result<()> {
     }
     result?;
 
-    info!("🎉 Public data download completed successfully!");
+    info!("Public data download completed successfully!");
     Ok(())
 }
 
@@ -904,7 +904,7 @@ async fn run_md5_command(args: &Md5Args, mp: Option<Arc<MultiProgress>>) -> Resu
                 mp,
             )
             .await?;
-            info!("🎉 MD5 manifest generated successfully");
+            info!("MD5 manifest generated successfully");
             Ok(())
         }
         Md5Subcommand::Verify(verify_args) => {
@@ -970,7 +970,7 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
     let yaml_path = yaml_path(cli)?;
     let config = load_config(&yaml_path).context("Failed to load YAML configuration")?;
 
-    info!("📁 Output directory: {}", args.output.display());
+    info!("Output directory: {}", args.output.display());
 
     let records = if let Some(accession) = &args.accession {
         fetch_ena_data(accession).await?
@@ -980,12 +980,12 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
         return Err(anyhow!("Either --accession or --tsv must be provided"));
     };
 
-    info!("📊 Total records fetched: {}", records.len());
+    info!("Total records fetched: {}", records.len());
     let filtered_records = apply_filters(records, &filters)?;
-    info!("✅ Records after filtering: {}", filtered_records.len());
+    info!("Records after filtering: {}", filtered_records.len());
 
     if filtered_records.is_empty() {
-        warn!("⚠️  No records match the filter criteria. Exiting.");
+        warn!("No records match the filter criteria. Exiting.");
         return Ok(());
     }
 
@@ -995,14 +995,14 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
     save_md5_files(&processed, &args.output, args.accession.as_deref())?;
 
     if processed.is_empty() {
-        warn!("⚠️  Records were found, but none have downloadable FASTQ/SRA files. The data may not have been synced to SRA/ENA yet. Please try again later.");
+        warn!("Records were found, but none have downloadable FASTQ/SRA files. The data may not have been synced to SRA/ENA yet. Please try again later.");
         return Ok(());
     }
 
     if args.dry_run {
-        info!("🏜️  Dry Run Mode: Listing files that would be downloaded:");
+        info!("Dry Run Mode: Listing files that would be downloaded:");
         for record in &processed {
-            info!("   📦 [{}]", record.run_accession);
+            info!("   [{}]", record.run_accession);
             info!(
                 "      - File 1: {} ({})",
                 record.fastq_ftp_1_name,
@@ -1013,7 +1013,7 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
                 info!("      - File 2: {} ({})", name, HumanBytes(size));
             }
         }
-        info!("🏜️  Dry Run completed. No files were downloaded.");
+        info!("Dry Run completed. No files were downloaded.");
         return Ok(());
     }
 
@@ -1024,7 +1024,7 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
             let key_hex = http_server::progress_key_hex();
             let key_path = args.output.join("progress.key");
             fs::write(&key_path, &key_hex)?;
-            info!("🔑 Progress key written to {}", key_path.display());
+            info!("Progress key written to {}", key_path.display());
         }
 
         let store = progress_store.clone();
@@ -1049,14 +1049,14 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
             download_with_aws(&processed, &config, args, progress_store.clone()).await?;
         }
         DownloadMethod::Auto => {
-            info!("🤖 Auto Mode: Attempting AWS S3 first...");
+            info!("Auto Mode: Attempting AWS S3 first...");
             validate_config(&config, DownloadMethod::Aws)?;
             validate_config(&config, DownloadMethod::Prefetch)?;
             if let Err(e) =
                 download_with_aws(&processed, &config, args, progress_store.clone()).await
             {
                 warn!(
-                    "⚠️  AWS S3 download encountered issues: {}. Switching to Prefetch...",
+                    "AWS S3 download encountered issues: {}. Switching to Prefetch...",
                     e
                 );
                 download_with_prefetch(&processed, &config, args).await?;
@@ -1064,7 +1064,7 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
         }
     }
 
-    info!("🎉 {} download completed successfully!", SCRIPT_NAME);
+    info!("{} download completed successfully!", SCRIPT_NAME);
     Ok(())
 }
 
@@ -1073,7 +1073,7 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
 // ============================================================
 
 async fn run_upload(args: &UploadArgs) -> Result<()> {
-    warn!("⚠️  The upload subcommand is still under testing. Use with caution.");
+    warn!("The upload subcommand is still under testing. Use with caution.");
     ebidownload_core::upload::run_upload(
         &args.bucket,
         &args.prefix,
@@ -1142,7 +1142,7 @@ async fn run_deps(args: &DepsArgs, cli: &Cli) -> Result<()> {
 
             let abs_yaml = std::fs::canonicalize(&yaml_path).unwrap_or_else(|_| yaml_path.clone());
             info!(
-                "✅ sra-tools installed and configured in {}",
+                "sra-tools installed and configured in {}",
                 abs_yaml.display()
             );
         }
@@ -1159,12 +1159,12 @@ async fn run_deps(args: &DepsArgs, cli: &Cli) -> Result<()> {
                     fasterq_dump,
                     source,
                 } => {
-                    info!("✅ sra-tools ready (source: {})", source);
+                    info!("sra-tools ready (source: {})", source);
                     info!("   prefetch: {}", prefetch.display());
                     info!("   fasterq-dump: {}", fasterq_dump.display());
                 }
                 DepStatus::Missing { reason } => {
-                    warn!("⚠️  {}", reason);
+                    warn!("{}", reason);
                     return Err(anyhow::anyhow!("{}", reason));
                 }
             }
@@ -1208,7 +1208,7 @@ fn print_banner() {
     println!(
         "{}",
         Color::Cyan.paint(format!(
-            "              🧬  EMBL-ENA Data Toolkit  │  v{}",
+            "              EMBL-ENA Data Toolkit  │  v{}",
             VERSION
         ))
     );
@@ -1298,7 +1298,7 @@ fn setup_logging(
         }
     }
 
-    info!("📝 Log file created: {}", log_path.display());
+    info!("Log file created: {}", log_path.display());
     Ok(())
 }
 
@@ -1314,7 +1314,7 @@ fn apply_filters(records: Vec<EnaRecord>, filters: &RegexFilters) -> Result<Vec<
     }
     if filtered_count > 0 {
         info!(
-            "🔍 Filtered out {} records based on regex patterns",
+            "Filtered out {} records based on regex patterns",
             filtered_count
         );
     }
@@ -1333,7 +1333,7 @@ fn save_md5_files(
     } else {
         output_dir.to_path_buf()
     };
-    info!("💾 Saving MD5 files to {}...", save_dir.display());
+    info!("Saving MD5 files to {}...", save_dir.display());
     let (r1_path, r2_path) = if let Some(acc) = accession {
         (
             save_dir.join(format!("R1_fastq_md5_{}.tsv", acc)),
@@ -1359,7 +1359,7 @@ fn save_md5_files(
             writeln!(r2_file, "{}\t{}\t{}", md5, name, record.sample_title)?;
         }
     }
-    info!("✅ MD5 files saved");
+    info!("MD5 files saved");
     Ok(())
 }
 
@@ -1380,7 +1380,7 @@ fn save_metadata_tsv(
     } else {
         save_dir.join("ena_metadata.tsv")
     };
-    info!("💾 Saving ENA metadata to {}...", path.display());
+    info!("Saving ENA metadata to {}...", path.display());
 
     let mut file = File::create(&path)?;
     if let Some(acc) = accession {
@@ -1393,7 +1393,7 @@ fn save_metadata_tsv(
         wtr.serialize(record)?;
     }
     wtr.flush()?;
-    info!("✅ Metadata saved");
+    info!("Metadata saved");
     Ok(())
 }
 
@@ -1443,7 +1443,7 @@ async fn download_with_aws(
     args: &DownloadArgs,
     progress_store: ProgressStore,
 ) -> Result<()> {
-    info!("☁️  Starting AWS S3 downloads...");
+    info!("Starting AWS S3 downloads...");
 
     let file_concurrency = args.multithreads;
     let chunk_concurrency = args.aws_threads;
@@ -1455,7 +1455,7 @@ async fn download_with_aws(
     let chunk_size_mb = args.chunk_size;
 
     info!(
-        "⚙️  Config: Parallel Files = {}, Threads/File = {}, Chunk Size = {}MB",
+        "Config: Parallel Files = {}, Threads/File = {}, Chunk Size = {}MB",
         file_concurrency, chunk_concurrency, chunk_size_mb
     );
 
@@ -1517,7 +1517,7 @@ async fn download_with_aws(
             let metadata = ebidownload_core::aws_s3::SraUtils::get_metadata(&run_id, None).await?;
             let sra_filename = format!("{}.sra", run_id);
             let sra_size = metadata.as_ref().map(|m| m.size).unwrap_or(0);
-            info!(target: "download_detail", "📥 [{}] Step 1: Downloading via AWS S3...", run_id);
+            info!(target: "download_detail", "[{}] Step 1: Downloading via AWS S3...", run_id);
 
             if let Some(sra_metadata) = metadata {
                 // Share the per-file byte counter with the status bar so the
@@ -1547,7 +1547,7 @@ async fn download_with_aws(
                     return Err(anyhow::anyhow!("Download failed for {}", run_id));
                 }
             } else {
-                warn!("❌ [{}] No AWS S3 URI found", run_id);
+                warn!("[{}] No AWS S3 URI found", run_id);
                 let mut map = progress_store.write().await;
                 if let Some(rp) = map.get_mut(&run_id) {
                     rp.stage = RunStage::Failed;
@@ -1572,9 +1572,9 @@ async fn download_with_aws(
                     && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false));
 
             if fq_exists {
-                info!(target: "download_detail", "⏩ [{}] FASTQ files already exist, skipping conversion.", run_id);
+                info!(target: "download_detail", "[{}] FASTQ files already exist, skipping conversion.", run_id);
             } else {
-                info!(target: "download_detail", "🔄 [{}] Step 2: Converting (fasterq-dump)...", run_id);
+                info!(target: "download_detail", "[{}] Step 2: Converting (fasterq-dump)...", run_id);
 
                 let estimated_fastq_size = sra_size * 3;
                 let mut child = Command::new(&fasterq_dump)
@@ -1622,7 +1622,7 @@ async fn download_with_aws(
 
                 if !status.success() {
                     warn!(
-                        "⚠️ [{}] fasterq-dump exited with status: {}",
+                        "[{}] fasterq-dump exited with status: {}",
                         run_id, status
                     );
                 }
@@ -1644,7 +1644,7 @@ async fn download_with_aws(
                     && fq_single.metadata().map(|m| m.len() > 0).unwrap_or(false));
 
             if fq_exists_after {
-                info!(target: "download_detail", "📦 [{}] Step 3: Compressing...", run_id);
+                info!(target: "download_detail", "[{}] Step 3: Compressing...", run_id);
 
                 let mut fastq_total_size = 0u64;
                 for name in &[
@@ -1712,18 +1712,18 @@ async fn download_with_aws(
                 if cleanup_sra {
                     let sra_path = output_dir.join(&sra_filename);
                     if sra_path.exists() {
-                        info!(target: "download_detail", "🧹 [{}] Cleaning up SRA file: {}", run_id, sra_path.display());
+                        info!(target: "download_detail", "[{}] Cleaning up SRA file: {}", run_id, sra_path.display());
                         if let Err(e) = tokio::fs::remove_file(&sra_path).await {
-                            warn!("⚠️ [{}] Failed to remove SRA file: {}", run_id, e);
+                            warn!("[{}] Failed to remove SRA file: {}", run_id, e);
                         }
                     }
                 }
 
-                info!("✅ [{}] Done", run_id);
+                info!("[{}] Done", run_id);
                 Ok(())
             } else {
                 error!(
-                    "❌ [{}] Conversion failed and no FASTQ output found.",
+                    "[{}] Conversion failed and no FASTQ output found.",
                     run_id
                 );
                 let mut map = progress_store.write().await;
@@ -1755,7 +1755,7 @@ async fn download_with_aws(
         generate_md5sum_file(&args.output, &gz_files)?;
     }
 
-    info!("🎉 All AWS S3 tasks completed");
+    info!("All AWS S3 tasks completed");
     Ok(())
 }
 
@@ -1765,7 +1765,7 @@ async fn download_with_ftp(
     config: &Config,
     args: &DownloadArgs,
 ) -> Result<()> {
-    // 🟢 Call ftp.rs, pass file size to enable percentage progress bar
+    // Call ftp.rs, pass file size to enable percentage progress bar
     ebidownload_core::ftp::process_downloads(
         records,
         config,

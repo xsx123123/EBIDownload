@@ -101,7 +101,7 @@ function App() {
     method: 'Aws' as 'Ftp' | 'Prefetch' | 'Aws' | 'Auto',
     multithreads: 4,
     awsThreads: 8,
-    chunkSize: 20,
+    chunkSize: 200,
     peOnly: false,
     cleanupSra: false,
     dryRun: false,
