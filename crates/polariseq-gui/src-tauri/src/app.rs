@@ -387,37 +387,7 @@ async fn run_download_async(
         DownloadMethod::Aws => {
             download_aws(processed, config, options, app_handle, pause_token).await
         }
-        DownloadMethod::Prefetch => download_prefetch(processed, config, options, app_handle).await,
         DownloadMethod::Ftp => download_ftp(processed, config, options, app_handle).await,
-        DownloadMethod::Auto => {
-            app_handle.emit(
-                "download-event",
-                DownloadEvent::Log {
-                    level: "info".to_string(),
-                    message: "Auto mode: trying AWS S3 first...".to_string(),
-                },
-            )?;
-            if let Err(e) = download_aws(
-                processed.clone(),
-                config.clone(),
-                options.clone(),
-                app_handle.clone(),
-                pause_token.clone(),
-            )
-            .await
-            {
-                app_handle.emit(
-                    "download-event",
-                    DownloadEvent::Log {
-                        level: "warn".to_string(),
-                        message: format!("AWS failed ({}), falling back to Prefetch", e),
-                    },
-                )?;
-                download_prefetch(processed, config, options, app_handle).await
-            } else {
-                Ok(())
-            }
-        }
     }
 }
 
@@ -648,70 +618,51 @@ async fn download_aws(
         handles.push(handle);
     }
 
+    let total_tasks = handles.len();
+    let mut failed = 0usize;
+    let mut first_err: Option<anyhow::Error> = None;
     for handle in handles {
-        if let Err(e) = handle.await {
-            let _ = app_handle.emit(
-                "download-event",
-                DownloadEvent::Log {
-                    level: "warn".to_string(),
-                    message: format!("Download task error: {}", e),
-                },
-            );
+        match handle.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                failed += 1;
+                let _ = app_handle.emit(
+                    "download-event",
+                    DownloadEvent::Log {
+                        level: "warn".to_string(),
+                        message: format!("Download task failed: {:#}", e),
+                    },
+                );
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                let _ = app_handle.emit(
+                    "download-event",
+                    DownloadEvent::Log {
+                        level: "warn".to_string(),
+                        message: format!("Download task join error: {}", e),
+                    },
+                );
+                if first_err.is_none() {
+                    first_err = Some(anyhow::anyhow!("task join error: {}", e));
+                }
+            }
         }
     }
 
-    app_handle.emit("download-event", DownloadEvent::Completed)?;
-    Ok(())
-}
-
-async fn download_prefetch(
-    processed: Vec<ProcessedRecord>,
-    config: Config,
-    options: DownloadOptions,
-    app_handle: ::tauri::AppHandle,
-) -> Result<()> {
-    app_handle.emit(
-        "download-event",
-        DownloadEvent::Log {
-            level: "info".to_string(),
-            message: "Starting Prefetch download...".to_string(),
-        },
-    )?;
-
-    // Show indeterminate progress for each run while Prefetch works in batch mode.
-    for record in &processed {
-        app_handle.emit(
+    if failed > 0 {
+        let msg = format!("{} of {} download task(s) failed", failed, total_tasks);
+        let _ = app_handle.emit(
             "download-event",
-            DownloadEvent::Progress {
-                run_id: record.run_accession.clone(),
-                percent: 0.0,
-                status: "Downloading".to_string(),
-                speed_mbps: 0.0,
+            DownloadEvent::Log {
+                level: "error".to_string(),
+                message: msg.clone(),
             },
-        )?;
-    }
-
-    crate::prefetch::download_all(
-        &processed,
-        &config,
-        &options.output,
-        options.multithreads,
-        options.aws_threads,
-        &options.prefetch_max_size,
-        options.cleanup_sra,
-    )
-    .await?;
-
-    for record in &processed {
-        app_handle.emit(
-            "download-event",
-            DownloadEvent::Progress {
-                run_id: record.run_accession.clone(),
-                percent: 100.0,
-                status: "Completed".to_string(),
-                speed_mbps: 0.0,
-            },
-        )?;
+        );
+        return Err(first_err.unwrap_or_else(|| anyhow::anyhow!("{}", msg)));
     }
 
     app_handle.emit("download-event", DownloadEvent::Completed)?;

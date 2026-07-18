@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Removed
+- **Prefetch download mode** and **Auto fallback** (AWS → Prefetch). Downloads use AWS S3 and/or FTP only; `fasterq-dump` is still required for SRA→FASTQ after AWS.
+
+### Fixed
+- **Task failure aggregation**: CLI/GUI AWS and FTP join loops now count `Ok(Err(_))` and return non-zero / error instead of always reporting success.
+- **Chunk download failures**: AWS range chunks are requeued up to 3 times; permanent failures abort the run with an error (no more silent `Err(_e) => {}`).
+
 ## [1.4.2] - 2026-07-18
 
 ### Changed

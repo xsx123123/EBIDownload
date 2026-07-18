@@ -175,7 +175,7 @@ struct DownloadArgs {
         short = 't',
         long = "aws-threads",
         default_value = "8",
-        help = "Threads per file (AWS/Prefetch)",
+        help = "Threads per file (AWS)",
         help_heading = "Download Options"
     )]
     aws_threads: usize,
@@ -186,13 +186,6 @@ struct DownloadArgs {
         help_heading = "Download Options"
     )]
     chunk_size: u64,
-    #[arg(
-        long = "max-size",
-        default_value = "100G",
-        help = "Max size limit (Prefetch only)",
-        help_heading = "Download Options"
-    )]
-    prefetch_max_size: String,
     #[arg(
         long = "pe-only",
         default_value = "false",
@@ -1042,28 +1035,9 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
         DownloadMethod::Ftp => {
             download_with_ftp(&processed, &config, args).await?;
         }
-        DownloadMethod::Prefetch => {
-            validate_config(&config, DownloadMethod::Prefetch)?;
-            validate_config(&config, DownloadMethod::Aws)?;
-            download_with_prefetch(&processed, &config, args).await?;
-        }
         DownloadMethod::Aws => {
             validate_config(&config, DownloadMethod::Aws)?;
             download_with_aws(&processed, &config, args, progress_store.clone()).await?;
-        }
-        DownloadMethod::Auto => {
-            info!("Auto Mode: Attempting AWS S3 first...");
-            validate_config(&config, DownloadMethod::Aws)?;
-            validate_config(&config, DownloadMethod::Prefetch)?;
-            if let Err(e) =
-                download_with_aws(&processed, &config, args, progress_store.clone()).await
-            {
-                warn!(
-                    "AWS S3 download encountered issues: {}. Switching to Prefetch...",
-                    e
-                );
-                download_with_prefetch(&processed, &config, args).await?;
-            }
         }
     }
 
@@ -1434,24 +1408,6 @@ pub fn create_script(output_path: &Path, fastq_id: &str, command: &str) -> Resul
     Ok(script_path)
 }
 
-// Prefetch Entry
-async fn download_with_prefetch(
-    records: &[ProcessedRecord],
-    config: &Config,
-    args: &DownloadArgs,
-) -> Result<()> {
-    polariseq_core::prefetch::download_all(
-        records,
-        config,
-        &args.output,
-        args.multithreads,
-        args.aws_threads,
-        &args.prefetch_max_size,
-        args.cleanup_sra,
-    )
-    .await
-}
-
 // AWS Entry (Keep original logic)
 async fn download_with_aws(
     records: &[ProcessedRecord],
@@ -1753,9 +1709,26 @@ async fn download_with_aws(
         handles.push(handle);
     }
 
+    let total_tasks = handles.len();
+    let mut failed = 0usize;
+    let mut first_err: Option<anyhow::Error> = None;
     for handle in handles {
-        if let Err(e) = handle.await {
-            warn!("Task error: {}", e);
+        match handle.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                failed += 1;
+                warn!("Task failed: {:#}", e);
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                warn!("Task join error: {}", e);
+                if first_err.is_none() {
+                    first_err = Some(anyhow!("task join error: {}", e));
+                }
+            }
         }
     }
     BARS_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -1769,6 +1742,15 @@ async fn download_with_aws(
 
     if !gz_files.is_empty() {
         generate_md5sum_file(&args.output, &gz_files)?;
+    }
+
+    if failed > 0 {
+        let msg = format!(
+            "{} of {} AWS S3 download task(s) failed",
+            failed, total_tasks
+        );
+        error!("{}", msg);
+        return Err(first_err.unwrap_or_else(|| anyhow!("{}", msg)));
     }
 
     info!("All AWS S3 tasks completed");

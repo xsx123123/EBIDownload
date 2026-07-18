@@ -467,8 +467,13 @@ impl ResumableDownloader {
             }
         });
 
-        let (tx, mut rx) = mpsc::channel(100);
+        // Result channel: Ok(chunk_id) on success, Err((chunk, error)) on failure
+        // so the coordinator can requeue with a retry budget.
+        let (tx, mut rx) = mpsc::channel::<Result<usize, (ChunkInfo, anyhow::Error)>>(100);
         let shared_tasks = Arc::new(Mutex::new(tasks));
+        let outstanding = Arc::new(AtomicU64::new(
+            (num_chunks as usize).saturating_sub(downloaded_chunks.len()) as u64,
+        ));
         let pause_token = self.pause_token.clone();
         for _ in 0..self.max_workers {
             let client = self.client.clone();
@@ -477,9 +482,13 @@ impl ResumableDownloader {
             let queue = shared_tasks.clone();
             let tx = tx.clone();
             let gb_clone = global_bytes.clone();
+            let outstanding_w = outstanding.clone();
             let pause_token_worker = pause_token.clone();
             tokio::spawn(async move {
                 loop {
+                    if outstanding_w.load(Ordering::SeqCst) == 0 {
+                        break;
+                    }
                     if let Some(token) = &pause_token_worker {
                         token.wait_while_paused().await;
                     }
@@ -506,30 +515,70 @@ impl ResumableDownloader {
                                     }
                                 }
                                 Err(e) => {
-                                    let _ = tx.send(Err(e)).await;
+                                    if tx.send(Err((t, e))).await.is_err() {
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        None => break,
+                        None => {
+                            // Queue empty but work may be requeued after a failure.
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
                     }
                 }
             });
         }
         drop(tx);
-        while let Some(msg) = rx.recv().await {
-            match msg {
-                Ok(chunk_id) => {
+
+        const MAX_CHUNK_RETRIES: u32 = 3;
+        let mut chunk_retries: std::collections::HashMap<usize, u32> =
+            std::collections::HashMap::new();
+        let mut fatal_errors: Vec<anyhow::Error> = Vec::new();
+
+        while outstanding.load(Ordering::SeqCst) > 0 {
+            match rx.recv().await {
+                Some(Ok(chunk_id)) => {
                     downloaded_chunks.insert(chunk_id);
                     if let Err(e) = self.save_progress(&downloaded_chunks) {
                         warn!("Failed to save progress for {}: {}", self.run_id, e);
                     }
+                    outstanding.fetch_sub(1, Ordering::SeqCst);
                 }
-                Err(_e) => {}
+                Some(Err((chunk, e))) => {
+                    let attempt = chunk_retries.entry(chunk.id).or_insert(0);
+                    *attempt += 1;
+                    if *attempt <= MAX_CHUNK_RETRIES {
+                        warn!(
+                            "[{}] Chunk {} failed (attempt {}/{}): {:#}. Requeueing...",
+                            self.run_id, chunk.id, *attempt, MAX_CHUNK_RETRIES, e
+                        );
+                        shared_tasks.lock().await.push(chunk);
+                    } else {
+                        warn!(
+                            "[{}] Chunk {} failed after {} attempts: {:#}",
+                            self.run_id, chunk.id, MAX_CHUNK_RETRIES, e
+                        );
+                        fatal_errors.push(e);
+                        outstanding.fetch_sub(1, Ordering::SeqCst);
+                    }
+                }
+                None => break,
             }
         }
 
         monitor_handle.abort();
         pb.finish_and_clear();
+
+        if !fatal_errors.is_empty() {
+            return Err(anyhow!(
+                "[{}] {} chunk(s) failed permanently (e.g. {})",
+                self.run_id,
+                fatal_errors.len(),
+                fatal_errors[0]
+            ));
+        }
+
         if downloaded_chunks.len() as u64 == num_chunks {
             self.verify_integrity(start_time.elapsed().as_secs_f64(), false)
                 .await
@@ -540,7 +589,7 @@ impl ResumableDownloader {
             );
             pb.println(&msg);
             warn!("{}", msg);
-            Ok(false)
+            Err(anyhow!("{}", msg))
         }
     }
     async fn verify_integrity(

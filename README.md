@@ -32,6 +32,9 @@ By default, Polariseq utilizes **AWS S3 global acceleration** to achieve ultra-f
 - **S3 resume fix**: Incomplete downloads with `.meta.json` no longer get wiped by an early MD5 check on preallocated full-size files.
 - **Faster defaults**: Default `--chunk-size` raised to **200 MiB**; status-bar speed uses a 3s sliding-window average.
 - **CLI polish**: Polariseq banner, shorter global help text, emoji-free log lines.
+- **Removed Prefetch / Auto modes**: Download methods are now **`aws`** (default) and **`ftp` only**. NCBI Prefetch pipeline and AWS→Prefetch auto-fallback are gone; AWS still uses `fasterq-dump` for SRA→FASTQ.
+- **Honest failure handling**: CLI/GUI no longer report “download completed successfully” when some runs fail — join loops aggregate `Ok(Err(_))`, exit non-zero (CLI), and skip false `Completed` events (GUI).
+- **Chunk retry**: Failed HTTP Range chunks are requeued up to **3 times**; permanent chunk failures abort that run with a clear error (no silent drop).
 
 ## What's New in v1.4.1
 
@@ -68,8 +71,7 @@ By default, Polariseq utilizes **AWS S3 global acceleration** to achieve ultra-f
 - **Easy Configuration**: Manages software paths and keys through a simple YAML file. The GUI provides a visual settings panel for path configuration.
 - **GEO Dataset Support**: Download sequencing data associated with GEO records using the corresponding **BioProject ID** (`PRJNAxxxxxx`).
 - **Flexible Usage**: Supports direct downloads via project accession numbers or TSV file lists.
-- **Resumable Downloads**: Supports resumable downloads in `aws` and `prefetch` modes, ensuring download continuity.
-- **Smart Auto-Fallback**: Automatically attempts AWS S3 first and seamlessly switches to Prefetch if the AWS download fails (Mode: `auto`).
+- **Resumable Downloads**: Supports resumable multi-range downloads in `aws` mode (progress via `.meta.json`).
 - **Public Reference Data Downloads**: Download configured NCBI BLAST, Kraken, or other public S3 databases with file-level and range-level concurrency.
 - **Advanced Filtering**: Supports Regex-based filtering to precisely include or exclude specific samples or runs.
 - **Real-time Progress (GUI)**: Visual progress bars, per-run download speed, smooth overall progress, download queue management, and live log streaming in the desktop application.
@@ -116,7 +118,7 @@ Since the raw data downloaded from NCBI/EBI is typically in `.sra` format, it mu
 
 Only one external dependency is required:
 
-- **`sra-tools` (`prefetch` / `fasterq-dump`)**: Required for `prefetch` downloads and `.sra` → `.fastq` conversion. Polariseq can **automatically download and install** this for you (see [Dependency Management](#3b-dependency-management)). You can also install it manually if you prefer.
+- **`sra-tools` (`fasterq-dump`)**: Required for `.sra` → `.fastq` conversion after AWS downloads. Polariseq can **automatically download and install** the toolkit (see [Dependency Management](#3b-dependency-management)). You can also install it manually if you prefer.
 
 ### a. Conda Environment (optional manual install)
 
@@ -141,7 +143,7 @@ crates/
 └── polariseq-gui/      # Tauri desktop application (Rust backend + React frontend)
 ```
 
-The **core** crate contains all shared business logic (AWS S3, FTP, Aspera, Prefetch, S3 Upload). Both CLI and GUI depend on it, ensuring consistent behavior across interfaces.
+The **core** crate contains all shared business logic (AWS S3, FTP, S3 Upload, public data, MD5). Both CLI and GUI depend on it, ensuring consistent behavior across interfaces.
 
 ---
 
@@ -362,7 +364,7 @@ npm run tauri dev
 
 | Tab | Function |
 |-----|----------|
-| **Download** | Enter Accession ID, select output directory, choose download method (AWS/FTP/Prefetch/Auto), set parallel threads, and start downloading. Supports fetching metadata preview before download. |
+| **Download** | Enter Accession ID, select output directory, choose download method (AWS / FTP), set parallel threads, and start downloading. Supports fetching metadata preview before download. |
 | **Upload** | Select files, enter S3 bucket name, configure upload settings, and submit to NCBI SRA via AWS S3. Shows real per-file upload progress and forwards core logs to the live log panel. |
 | **Settings** | Visually configure paths for `prefetch`, `fasterq-dump`, and other software executables. |
 | **About** | Software information, version, a "View on GitHub" link to the [project repository](https://github.com/xsx123123/polariseq), and a reflection on the atoms that make us all. |
@@ -397,13 +399,12 @@ A circular **theme toggle button** in the top-right corner of the header switche
 | `-T`  | `--tsv`          | Download using a TSV file containing Accession IDs |              |
 | `-o`  | `--output`       | **Required**, the output directory for downloaded files |              |
 | `-p`  | `--multithreads` | Number of files to download in parallel          | 4            |
-| `-d`  | `--download`     | Download method (`aws`, `ftp`, `prefetch`, `auto`) | `aws`        |
+| `-d`  | `--download`     | Download method (`aws`, `ftp`) | `aws`        |
 | `-y`  | `--yaml`         | Specify the path to the `polariseq.yaml` config file | `polariseq.yaml` |
 |       | `--log-level`    | Log level (`debug`, `info`, `warn`, `error`)     | `info`       |
 |       | `--log-format`   | Log output format (`text`, `json`)               | `text`       |
-| `-t`  | `--aws-threads`  | **AWS/Prefetch**: Threads for internal chunk download or conversion per file | 8            |
-|       | `--chunk-size`   | **AWS Only**: Chunk size in MB                   | 20           |
-|       | `--max-size`     | **Prefetch Only**: Max download size limit (e.g., `100G`) | `100G`       |
+| `-t`  | `--aws-threads`  | **AWS**: Threads for internal chunk download or conversion per file | 8            |
+|       | `--chunk-size`   | **AWS Only**: Chunk size in MB                   | 200          |
 |       | `--pe-only`      | Only download Paired-End data, ignore Single-End | `false`      |
 |       | `--filter-sample`| Regex pattern to include samples matching this   |              |
 |       | `--filter-run`   | Regex pattern to include runs matching this      |              |
@@ -535,18 +536,6 @@ You can use `--filter-run` or `--filter-sample` to download specific data.
   --filter-run SRR1572540 SRR1572541 SRR1572542 
 ```
 
-**3. Standard Mode (Prefetch)**
-
-The following example demonstrates how to download data for project `PRJNA1251654`, using 6 threads, and saving the files to the current directory.
-
-```bash
-# Make sure you have activated the conda environment and the config file is set up correctly
-# conda activate polariseq_env
-
-# Example command:
-./target/release/polariseq download -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./polariseq.yaml -d prefetch
-```
-
 #### d. MD5 Checksums
 
 The `md5` subcommand generates and verifies md5sum-compatible manifests for any local file or directory. Both operations hash multiple files in parallel and show a **live per-file progress bar** for each file being hashed (bars are skipped automatically when the output is not a TTY).
@@ -593,7 +582,7 @@ This tool leverages the AWS S3 open data pool (`s3://sra-pub-run-odp/`) for high
    - **Check the ENA mirror**: The European Nucleotide Archive (ENA) is sometimes available 1–3 days earlier than SRA. Try `ftp://ftp.sra.ebi.ac.uk/`.
 
 4. **Recommended Download Strategy**
-   We recommend implementing a tiered download logic: first check SRA availability; if ready, use this tool for high-speed S3 downloads; if not ready, automatically fall back to SRA Toolkit or prompt the user to wait/contact the authors.
+   Prefer AWS S3 when SRA data is ready. If the run is not yet on S3, wait for NCBI processing, contact the submitter, or try ENA — Polariseq no longer falls back to Prefetch automatically.
 
 > **Note**: This limitation stems from the NCBI data archiving architecture, not a technical defect of this tool. For urgent needs, we recommend contacting the data submitter to obtain the original files directly.
 

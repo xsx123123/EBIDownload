@@ -186,11 +186,34 @@ pub async fn process_downloads(
         handles.push(handle);
     }
 
+    let mut failed = 0usize;
+    let mut first_err: Option<anyhow::Error> = None;
     for handle in handles {
-        if let Err(_e) = handle.await {}
+        match handle.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                failed += 1;
+                warn!("FTP download task failed: {:#}", e);
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                warn!("FTP download task join error: {}", e);
+                if first_err.is_none() {
+                    first_err = Some(anyhow::anyhow!("task join error: {}", e));
+                }
+            }
+        }
     }
 
     mp.clear().ok();
+    if failed > 0 {
+        return Err(first_err.unwrap_or_else(|| {
+            anyhow::anyhow!("{} FTP download task(s) failed", failed)
+        }));
+    }
     Ok(())
 }
 

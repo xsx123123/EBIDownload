@@ -5,7 +5,6 @@ pub mod deps;
 pub mod ftp;
 pub mod md5;
 pub mod observer;
-pub mod prefetch;
 pub mod progress;
 pub mod progress_store;
 pub mod public_data;
@@ -111,9 +110,7 @@ pub struct ProcessedRecord {
 #[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum DownloadMethod {
     Ftp,
-    Prefetch,
     Aws,
-    Auto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -510,14 +507,10 @@ pub fn generate_md5sum_file_at(md5_path: &Path, files: &[PathBuf]) -> Result<Pat
 
 pub fn validate_config(config: &Config, method: DownloadMethod) -> Result<()> {
     match method {
-        DownloadMethod::Prefetch => {
-            check_executable(&config.software.prefetch, "prefetch")?;
+        DownloadMethod::Aws => {
             check_executable(&config.software.fasterq_dump, "fasterq-dump")?;
         }
-        DownloadMethod::Aws | DownloadMethod::Auto => {
-            check_executable(&config.software.fasterq_dump, "fasterq-dump")?;
-        }
-        _ => {}
+        DownloadMethod::Ftp => {}
     }
     Ok(())
 }

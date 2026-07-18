@@ -98,7 +98,7 @@ function App() {
     accession: '',
     tsv: '',
     output: '',
-    method: 'Aws' as 'Ftp' | 'Prefetch' | 'Aws' | 'Auto',
+    method: 'Aws' as 'Ftp' | 'Aws',
     multithreads: 4,
     awsThreads: 8,
     chunkSize: 200,
@@ -897,8 +897,6 @@ function DownloadTab({
             >
               <option value="Aws">AWS S3 (Recommended)</option>
               <option value="Ftp">FTP</option>
-              <option value="Prefetch">NCBI Prefetch</option>
-              <option value="Auto">Automatic Fallback</option>
             </select>
           </div>
         </div>
