@@ -1,14 +1,14 @@
 [package]
-name = "ebidownload-cli"
+name = "polariseq-cli"
 version = "1.4.1"
 edition = "2021"
 
 [[bin]]
-name = "EBIDownload"
+name = "polariseq"
 path = "src/main.rs"
 
 [dependencies]
-ebidownload-core = { path = "../ebidownload-core", features = ["cli"] }
+polariseq-core = { path = "../polariseq-core", features = ["cli"] }
 anyhow = "1.0"
 chrono = "0.4"
 clap = { version = "4.4", features = ["derive"] }

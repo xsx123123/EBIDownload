@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
-  "productName": "EBIDownload",
+  "productName": "Polariseq",
   "version": "1.4.1",
-  "identifier": "com.ebidownload.app",
+  "identifier": "com.polariseq.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "EBIDownload",
+        "title": "Polariseq",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

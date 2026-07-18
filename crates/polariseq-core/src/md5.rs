@@ -93,10 +93,10 @@ pub fn parse_md5_manifest(path: &Path) -> Result<Vec<(String, String)>> {
 }
 
 /// Name prefix of the log files written by the `md5` CLI subcommand itself
-/// (the CLI names them `EBIDownload_md5_<timestamp>.log`). These logs live
+/// (the CLI names them `polariseq_md5_<timestamp>.log`). These logs live
 /// next to the hashed data and change on every run, so they are never hashed
 /// or verified.
-pub const MD5_LOG_PREFIX: &str = "EBIDownload_md5";
+pub const MD5_LOG_PREFIX: &str = "polariseq_md5";
 
 /// True when `name` (a file name, not a path) is an md5-subcommand log file.
 fn is_md5_log(name: &str) -> bool {
@@ -106,7 +106,7 @@ fn is_md5_log(name: &str) -> bool {
 /// Recursively collect regular files under `dir`, skipping hidden entries.
 ///
 /// Hidden entries are those whose file name starts with `.`. Log files
-/// written by the `md5` subcommand itself (`EBIDownload_md5_*.log`) are
+/// written by the `md5` subcommand itself (`polariseq_md5_*.log`) are
 /// skipped as well.
 pub fn collect_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
@@ -357,12 +357,12 @@ mod tests {
 
     #[test]
     fn md5_log_names_are_detected() {
-        assert!(is_md5_log("EBIDownload_md5_2026-07-17_13-32-27.log"));
-        assert!(is_md5_log("EBIDownload_md5_x.log"));
-        assert!(!is_md5_log("EBIDownload_2026-07-17_13-32-27.log"));
-        assert!(!is_md5_log("EBIDownload_PRJNA123_2026-07-17_13-32-27.log"));
+        assert!(is_md5_log("polariseq_md5_2026-07-17_13-32-27.log"));
+        assert!(is_md5_log("polariseq_md5_x.log"));
+        assert!(!is_md5_log("Polariseq_2026-07-17_13-32-27.log"));
+        assert!(!is_md5_log("Polariseq_PRJNA123_2026-07-17_13-32-27.log"));
         assert!(!is_md5_log("md5.txt"));
-        assert!(!is_md5_log("EBIDownload_md5_notes.txt"));
+        assert!(!is_md5_log("polariseq_md5_notes.txt"));
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("data.fa"), b"acgt").unwrap();
         std::fs::write(
-            dir.path().join("EBIDownload_md5_2026-07-17_13-32-27.log"),
+            dir.path().join("polariseq_md5_2026-07-17_13-32-27.log"),
             b"log",
         )
         .unwrap();
@@ -388,7 +388,7 @@ mod tests {
     async fn generate_excludes_output_manifest_and_logs() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("data.fa"), b"acgt").unwrap();
-        std::fs::write(dir.path().join("EBIDownload_md5_run.log"), b"log").unwrap();
+        std::fs::write(dir.path().join("polariseq_md5_run.log"), b"log").unwrap();
         // A stale manifest from a previous run must not hash itself.
         let output = dir.path().join("md5.txt");
         std::fs::write(&output, b"stale").unwrap();
@@ -400,7 +400,7 @@ mod tests {
         let manifest = std::fs::read_to_string(&output).unwrap();
         assert!(manifest.contains("data.fa"), "manifest: {manifest}");
         assert!(!manifest.contains("md5.txt"), "manifest: {manifest}");
-        assert!(!manifest.contains("EBIDownload_md5"), "manifest: {manifest}");
+        assert!(!manifest.contains("polariseq_md5"), "manifest: {manifest}");
     }
 
     #[tokio::test]
@@ -414,7 +414,7 @@ mod tests {
             &manifest,
             format!(
                 "{md5}  data.fa\n\
-                 00000000000000000000000000000000  EBIDownload_md5_run.log\n\
+                 00000000000000000000000000000000  polariseq_md5_run.log\n\
                  00000000000000000000000000000000  md5.txt\n"
             ),
         )

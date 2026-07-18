@@ -40,12 +40,12 @@ impl AppState {
 }
 
 /// Returns the default user-specific config path.
-/// All platforms: ~/.EBIDownload/EBIDownload.yaml
+/// All platforms: ~/.polariseq/polariseq.yaml
 fn default_config_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".EBIDownload")
-        .join("EBIDownload.yaml")
+        .join(".polariseq")
+        .join("polariseq.yaml")
 }
 
 /// Ensure the parent directory of the given path exists.
@@ -291,7 +291,7 @@ pub async fn start_download_command(
     }
 
     // Mirror runtime logs to a file inside the output directory.
-    let log_file_path = PathBuf::from(&options.output).join("EBIDownload.log");
+    let log_file_path = PathBuf::from(&options.output).join("polariseq.log");
     if let Err(e) = crate::logger::set_log_file(&log_file_path) {
         eprintln!("Failed to set log file at {:?}: {}", log_file_path, e);
     }

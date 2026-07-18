@@ -1,5 +1,5 @@
 [package]
-name = "ebidownload-core"
+name = "polariseq-core"
 version = "1.4.1"
 edition = "2021"
 

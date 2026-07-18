@@ -17,16 +17,16 @@
 
 ### Added
 - **Automatic Dependency Management**: New `deps` subcommand to download, verify, and install NCBI `sra-tools` automatically:
-  - `EBIDownload deps install` downloads the correct pre-built release for the current platform
-  - `EBIDownload deps check` verifies that `prefetch` / `fasterq-dump` are available
-  - `EBIDownload deps list` shows managed installations
-  - `EBIDownload deps remove` removes a managed installation
+  - `polariseq deps install` downloads the correct pre-built release for the current platform
+  - `polariseq deps check` verifies that `prefetch` / `fasterq-dump` are available
+  - `polariseq deps list` shows managed installations
+  - `polariseq deps remove` removes a managed installation
 - **GUI Dependency Auto-Detection**: The GUI now checks for `sra-tools` on startup and offers a one-click install dialog if it is missing.
 - **CLI Install Progress Bar**: `deps install` now shows a real-time progress bar for download, checksum verification, and extraction.
 
 ### Changed
 - **Version Bump**: Bumped version to `1.4.0` across all crates, the GUI package, and documentation.
-- **YAML Path Logging**: `deps install` now reports the absolute path of the updated `EBIDownload.yaml` file.
+- **YAML Path Logging**: `deps install` now reports the absolute path of the updated `polariseq.yaml` file.
 
 ## [1.3.7] - 2026-06-05
 
@@ -40,7 +40,7 @@
 - **Subcommand Architecture**: Refactored CLI from flat arguments to `download` / `upload` subcommands using `clap::Subcommand`
 
 ### Changed
-- **CLI Structure**: All download commands now require the `download` subcommand prefix (e.g., `EBIDownload download -A PRJNA1251654 -o ./data -d aws`)
+- **CLI Structure**: All download commands now require the `download` subcommand prefix (e.g., `polariseq download -A PRJNA1251654 -o ./data -d aws`)
 - **Banner Update**: Renamed from "EMBL-ENA Data Downloader" to "EMBL-ENA Data Toolkit" to reflect both download and upload capabilities
 - **Global Options**: `--yaml`, `--log-level`, `--log-format` are now global options shared across subcommands
 
@@ -49,7 +49,7 @@
 ### Added
 - **Colorful ASCII Logo & Help**: Added a vibrant, multi-colored ASCII art logo to the CLI help output. Help sections are now color-coded (green headers, blue options, cyan placeholders) for better readability.
 - **Unicode Progress Bars**: Replaced plain ASCII progress bars with modern Unicode block characters (`█▓░`) and added spinner animations for a smoother download experience.
-- **Smart File Naming**: Log files, metadata TSV, and MD5 checksum files now automatically include the project Accession ID in their filenames (e.g., `EBIDownload_PRJNA123_...log`, `ena_metadata_PRJNA123.tsv`).
+- **Smart File Naming**: Log files, metadata TSV, and MD5 checksum files now automatically include the project Accession ID in their filenames (e.g., `Polariseq_PRJNA123_...log`, `ena_metadata_PRJNA123.tsv`).
 - **Project Annotation**: `ena_metadata.tsv` now includes a `# Project Accession:` comment header for easy traceability.
 
 ### Changed
@@ -112,12 +112,12 @@
 - **CI/CD**: Added GitHub Actions workflow for automated Rust builds.
 
 ### Fixed
-- Fixed environment configuration in `EBIDownload_env.yaml`.
+- Fixed environment configuration in `polariseq_env.yaml`.
 - Improved log printing logic and user feedback.
 
 ## [0.0.2] - 2025-11-06
 
 ### Added
-- Initial release of EBIDownload.
+- Initial release of Polariseq.
 - Basic support for Aspera, FTP, and Prefetch download methods.
 - Documentation and Usage examples.

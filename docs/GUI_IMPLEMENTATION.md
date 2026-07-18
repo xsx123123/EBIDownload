@@ -1,13 +1,13 @@
-# EBIDownload GUI Implementation
+# Polariseq GUI Implementation
 
 ## Overview
 
-This document describes the Tauri-based GUI implementation for EBIDownload.
+This document describes the Tauri-based GUI implementation for Polariseq.
 
 ## Architecture
 
 ```
-EBIDownload/
+Polariseq/
 ├── src/                          # React frontend
 │   ├── App.tsx                  # Main application component
 │   ├── main.tsx                 # React entry point

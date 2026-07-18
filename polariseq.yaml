@@ -1,7 +1,7 @@
-# EBIDownload Setting yaml
+# Polariseq Setting yaml
 software:
-  prefetch : /home/zj/.local/share/mamba/envs/EBIDownload/bin/prefetch
-  fasterq_dump : /home/zj/.local/share/mamba/envs/EBIDownload/bin/fasterq-dump
+  prefetch : /home/zj/.local/share/mamba/envs/Polariseq/bin/prefetch
+  fasterq_dump : /home/zj/.local/share/mamba/envs/Polariseq/bin/fasterq-dump
   blastdbcmd : /home/zj/software/ncbi-blast-2.17.0+/bin/blastdbcmd
 # Public data
 public_data:

@@ -1,8 +1,8 @@
 [package]
-name = "ebidownload"
+name = "polariseq"
 version = "1.4.1"
-description = "EBIDownload - Download sequencing data from EBI and NCBI"
-authors = ["EBIDownload contributors"]
+description = "Polariseq - Download sequencing data from EBI and NCBI"
+authors = ["Polariseq contributors"]
 license = "MIT"
 repository = ""
 edition = "2021"
@@ -15,7 +15,7 @@ tauri = { version = "2.0", features = [] }
 tauri-plugin-shell = "2.0"
 tauri-plugin-dialog = "2.0"
 tauri-plugin-fs = "2.0"
-ebidownload-core = { path = "../../ebidownload-core" }
+polariseq-core = { path = "../../polariseq-core" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
@@ -27,11 +27,11 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 chrono = "0.4"
 
 [lib]
-name = "ebidownload"
+name = "polariseq"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ebidownload"
+name = "polariseq"
 path = "src/main.rs"
 
 [features]

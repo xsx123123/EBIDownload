@@ -1,8 +1,8 @@
-//! EBIDownload Tauri App
+//! Polariseq Tauri App
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use ebidownload::app::*;
-use ebidownload::logger::init_logging;
+use polariseq::app::*;
+use polariseq::logger::init_logging;
 use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

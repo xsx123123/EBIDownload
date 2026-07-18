@@ -1554,88 +1554,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
-name = "ebidownload"
-version = "1.4.1"
-dependencies = [
- "anyhow",
- "chrono",
- "dirs 5.0.1",
- "ebidownload-core",
- "serde",
- "serde_json",
- "serde_yaml",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-shell",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "ebidownload-cli"
-version = "1.4.1"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "axum",
- "base64 0.22.1",
- "chrono",
- "clap",
- "csv",
- "ebidownload-core",
- "hex",
- "indicatif",
- "md5",
- "nu-ansi-term",
- "rand 0.8.6",
- "regex",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "ebidownload-core"
-version = "1.4.1"
-dependencies = [
- "anyhow",
- "aws-config",
- "aws-sdk-s3",
- "bytes",
- "chrono",
- "clap",
- "csv",
- "dirs 5.0.1",
- "flate2",
- "futures",
- "gzp",
- "indicatif",
- "md5",
- "openssl",
- "quick-xml 0.36.2",
- "regex",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "serde_yaml",
- "tar",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "which",
- "wildmatch",
-]
-
-[[package]]
 name = "ecdsa"
 version = "0.14.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3843,6 +3761,88 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "polariseq"
+version = "1.4.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs 5.0.1",
+ "polariseq-core",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-shell",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "polariseq-cli"
+version = "1.4.1"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "csv",
+ "hex",
+ "indicatif",
+ "md5",
+ "nu-ansi-term",
+ "polariseq-core",
+ "rand 0.8.6",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "polariseq-core"
+version = "1.4.1"
+dependencies = [
+ "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
+ "bytes",
+ "chrono",
+ "clap",
+ "csv",
+ "dirs 5.0.1",
+ "flate2",
+ "futures",
+ "gzp",
+ "indicatif",
+ "md5",
+ "openssl",
+ "quick-xml 0.36.2",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tar",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "which",
+ "wildmatch",
 ]
 
 [[package]]

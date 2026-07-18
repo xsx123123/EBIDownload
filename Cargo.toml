@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "crates/ebidownload-core",
-    "crates/ebidownload-cli",
-    "crates/ebidownload-gui/src-tauri",
+    "crates/polariseq-core",
+    "crates/polariseq-cli",
+    "crates/polariseq-gui/src-tauri",
 ]
 resolver = "2"

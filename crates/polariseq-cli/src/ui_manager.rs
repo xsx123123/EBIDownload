@@ -19,8 +19,8 @@ use std::time::{Duration, Instant};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tokio::task::JoinHandle;
 
-use ebidownload_core::observer::{CompletedInfo, DownloadObserver};
-use ebidownload_core::progress_store::{ProgressStore, RunStage};
+use polariseq_core::observer::{CompletedInfo, DownloadObserver};
+use polariseq_core::progress_store::{ProgressStore, RunStage};
 
 /// Window used for the smoothed aggregate speed on the status bar.
 const SPEED_WINDOW: Duration = Duration::from_secs(3);
@@ -333,7 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn sra_counts_read_from_progress_store() {
-        use ebidownload_core::progress_store::new_progress_store;
+        use polariseq_core::progress_store::new_progress_store;
         let store = new_progress_store();
         insert_run(&store, "r1", RunStage::Completed).await;
         insert_run(&store, "r2", RunStage::Downloading).await;
@@ -365,7 +365,7 @@ mod tests {
     }
 
     async fn insert_run(store: &ProgressStore, id: &str, stage: RunStage) {
-        use ebidownload_core::progress_store::{RunProgress, StageProgress};
+        use polariseq_core::progress_store::{RunProgress, StageProgress};
         store
             .write()
             .await

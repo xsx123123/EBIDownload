@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clean all build artifacts for the EBIDownload workspace."""
+"""Clean all build artifacts for the Polariseq workspace."""
 
 import shutil
 import subprocess
@@ -16,7 +16,7 @@ def main() -> int:
     subprocess.run(["cargo", "clean"], cwd=project_root, check=True)
 
     print("🧹 Cleaning GUI frontend...")
-    gui_dir = project_root / "crates" / "ebidownload-gui"
+    gui_dir = project_root / "crates" / "polariseq-gui"
 
     for name in ("node_modules", "dist"):
         path = gui_dir / name
@@ -32,7 +32,7 @@ def main() -> int:
     print("✅ All cleaned.")
     print()
     print("To rebuild, run:")
-    print("  cd crates/ebidownload-gui && npm install && npm run tauri dev")
+    print("  cd crates/polariseq-gui && npm install && npm run tauri dev")
 
     return 0
 

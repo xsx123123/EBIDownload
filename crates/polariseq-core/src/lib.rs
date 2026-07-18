@@ -1,4 +1,4 @@
-//! EBIDownload library
+//! Polariseq library
 
 pub mod aws_s3;
 pub mod deps;

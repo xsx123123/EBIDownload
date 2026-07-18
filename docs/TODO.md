@@ -1,4 +1,4 @@
-# EBIDownload TODO List
+# Polariseq TODO List
 
 ## ✅ 已修复 Bug（记录备忘）
 
@@ -30,7 +30,7 @@
 
 ### ~~pigz 替换为 Rust 原生并行压缩~~
 
-**实现**：引入 `gzp` crate（默认 `deflate_default` + `libdeflate` 后端），新增 `ebidownload_core::compress_fastq_files()`；替换 `prefetch.rs`、GUI AWS 路径、CLI AWS/Prefetch 路径中的外部 `pigz` 调用；移除 `which` 与 `check_pigz_dependency()`。
+**实现**：引入 `gzp` crate（默认 `deflate_default` + `libdeflate` 后端），新增 `polariseq_core::compress_fastq_files()`；替换 `prefetch.rs`、GUI AWS 路径、CLI AWS/Prefetch 路径中的外部 `pigz` 调用；移除 `which` 与 `check_pigz_dependency()`。
 
 ### ~~上传功能真正打通~~
 
@@ -42,7 +42,7 @@
 
 ### ~~自动检测并安装外部依赖~~
 
-**实现**：`ebidownload-core` 新增 `deps` 模块，支持检测当前平台、从 NCBI 官方源下载 `sra-tools` 预编译包、MD5 校验、解压、安装到托管目录并写入 `EBIDownload.yaml`；CLI 新增 `deps` 子命令（`install/check/list/remove`）；GUI 启动时自动调用 `check_deps_command`，缺失时弹出模态框一键安装，安装完成后自动刷新配置。
+**实现**：`polariseq-core` 新增 `deps` 模块，支持检测当前平台、从 NCBI 官方源下载 `sra-tools` 预编译包、MD5 校验、解压、安装到托管目录并写入 `polariseq.yaml`；CLI 新增 `deps` 子命令（`install/check/list/remove`）；GUI 启动时自动调用 `check_deps_command`，缺失时弹出模态框一键安装，安装完成后自动刷新配置。
 
 ### ~~CLI 终端日志 / 进度条美化~~
 
@@ -62,10 +62,10 @@
 
 | 位置 | 模式 |
 |------|------|
-| `crates/ebidownload-cli/src/main.rs`（AWS 批处理 join） | `if let Err(e) = handle.await` 仅处理 JoinError |
-| `crates/ebidownload-core/src/prefetch.rs` | 同上；最后仍 `Ok(())` + “All Prefetch tasks completed” |
-| `crates/ebidownload-gui/src-tauri/src/app.rs` | 同上；随后仍 emit `DownloadEvent::Completed` |
-| `crates/ebidownload-core/src/ftp.rs` | `if let Err(_e) = handle.await {}` 完全静默 |
+| `crates/polariseq-cli/src/main.rs`（AWS 批处理 join） | `if let Err(e) = handle.await` 仅处理 JoinError |
+| `crates/polariseq-core/src/prefetch.rs` | 同上；最后仍 `Ok(())` + “All Prefetch tasks completed” |
+| `crates/polariseq-gui/src-tauri/src/app.rs` | 同上；随后仍 emit `DownloadEvent::Completed` |
+| `crates/polariseq-core/src/ftp.rs` | `if let Err(_e) = handle.await {}` 完全静默 |
 
 **影响**：
 - 部分 / 全部 run 失败时仍打印 “download completed successfully!”，退出码 0
@@ -87,7 +87,7 @@ match handle.await {
 
 #### 2. AWS 分片下载失败被丢弃、不重入队
 
-**位置**：`crates/ebidownload-core/src/aws_s3.rs`（chunk 结果处理）
+**位置**：`crates/polariseq-core/src/aws_s3.rs`（chunk 结果处理）
 
 **现象**：chunk `Err` 后错误被丢弃，当前 run 内该分片不会重入队；进度可能不完整。
 
@@ -160,8 +160,8 @@ match handle.await {
 
 | 端 | 默认路径 |
 |----|----------|
-| GUI | `~/.EBIDownload/EBIDownload.yaml` |
-| CLI | 可执行文件旁 `EBIDownload.yaml` |
+| GUI | `~/.polariseq/polariseq.yaml` |
+| CLI | 可执行文件旁 `polariseq.yaml` |
 
 `deps install` 写入传入路径，容易出现一端更新、另一端仍缺配置。
 

@@ -63,7 +63,7 @@ pub enum DepSource {
 impl fmt::Display for DepSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DepSource::Config => write!(f, "EBIDownload.yaml"),
+            DepSource::Config => write!(f, "polariseq.yaml"),
             DepSource::Managed => write!(f, "managed dependency directory"),
             DepSource::Path => write!(f, "system PATH"),
         }
@@ -125,7 +125,7 @@ pub fn detect_platform() -> Result<String> {
 pub fn deps_root() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .join("EBIDownload")
+        .join("polariseq")
         .join("deps")
 }
 
@@ -137,7 +137,7 @@ pub fn sra_tools_install_dir(version: &str) -> PathBuf {
 /// Check whether sra-tools are available.
 ///
 /// Lookup order:
-/// 1. `EBIDownload.yaml` explicit configuration
+/// 1. `polariseq.yaml` explicit configuration
 /// 2. Managed dependency directory
 /// 3. System PATH
 pub fn check_sra_tools(config: Option<&Config>) -> DepStatus {
@@ -493,7 +493,7 @@ pub fn remove_sra_tools(version: &str) -> Result<()> {
     Ok(())
 }
 
-/// Write or update `EBIDownload.yaml` with the given sra-tools paths.
+/// Write or update `polariseq.yaml` with the given sra-tools paths.
 pub fn write_software_paths_to_yaml(yaml_path: &Path, paths: &SoftwarePaths) -> Result<()> {
     let mut config: Config = if yaml_path.exists() {
         let content = std::fs::read_to_string(yaml_path)?;

@@ -1,13 +1,13 @@
 
 [中文文档](./docs/README_zh.md) | English
 
-# EBIDownload
+# Polariseq
 
-EBIDownload is a Rust-based toolkit for efficiently downloading and uploading sequencing data from the European Bioinformatics Institute (EBI), NCBI SRA, and GEO (Gene Expression Omnibus). It provides both a **command-line interface (CLI)** and a **cross-platform desktop GUI** (powered by Tauri), making it accessible to both bioinformatics engineers and wet-lab researchers.
+Polariseq is a Rust-based toolkit for efficiently downloading and uploading sequencing data from the European Bioinformatics Institute (EBI), NCBI SRA, and GEO (Gene Expression Omnibus). It provides both a **command-line interface (CLI)** and a **cross-platform desktop GUI** (powered by Tauri), making it accessible to both bioinformatics engineers and wet-lab researchers.
 
-For GEO datasets, simply obtain the associated **BioProject ID** (e.g., `PRJNAxxxxxx`) and pass it to EBIDownload to fetch the underlying sequencing data at high speed.
+For GEO datasets, simply obtain the associated **BioProject ID** (e.g., `PRJNAxxxxxx`) and pass it to Polariseq to fetch the underlying sequencing data at high speed.
 
-By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also uses Rust-native parallel gzip compression (via the [`gzp`](https://crates.io/crates/gzp) crate with the `libdeflate` backend), eliminating the need to install external compression tools.
+By default, Polariseq utilizes **AWS S3 global acceleration** to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also uses Rust-native parallel gzip compression (via the [`gzp`](https://crates.io/crates/gzp) crate with the `libdeflate` backend), eliminating the need to install external compression tools.
 
 ## What's New in v1.4.1
 
@@ -21,10 +21,10 @@ By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra
 ## What's New in v1.4.0
 
 - **Light / Dark theme toggle**: A new theme button in the GUI header switches between dark and light modes. The choice is persisted across sessions (`localStorage`) and respects the system's `prefers-color-scheme` on first launch.
-- **GitHub link in About tab**: The About tab now includes a "View on GitHub" link that opens the project's [GitHub repository](https://github.com/xsx123123/EBIDownload) in your default browser.
-- **Default config moved to `~/.EBIDownload/EBIDownload.yaml`**: The GUI and CLI now look for `EBIDownload.yaml` under `~/.EBIDownload/` by default, and auto-load it on startup.
-- **Automatic Dependency Management**: EBIDownload can now automatically download, verify, and install NCBI `sra-tools` via the new `EBIDownload deps install` command. The GUI also checks for dependencies on startup and offers one-click installation if `sra-tools` is missing.
-- **GUI logs written to output directory**: While a download is running, logs are mirrored to `output/EBIDownload.log` for offline review, and `TRACE` noise is filtered to keep log files small.
+- **GitHub link in About tab**: The About tab now includes a "View on GitHub" link that opens the project's [GitHub repository](https://github.com/xsx123123/polariseq) in your default browser.
+- **Default config moved to `~/.polariseq/polariseq.yaml`**: The GUI and CLI now look for `polariseq.yaml` under `~/.polariseq/` by default, and auto-load it on startup.
+- **Automatic Dependency Management**: Polariseq can now automatically download, verify, and install NCBI `sra-tools` via the new `polariseq deps install` command. The GUI also checks for dependencies on startup and offers one-click installation if `sra-tools` is missing.
+- **GUI logs written to output directory**: While a download is running, logs are mirrored to `output/polariseq.log` for offline review, and `TRACE` noise is filtered to keep log files small.
 - **Pause / Stop downloads in GUI**: AWS downloads can now be paused and resumed; any in-progress download can be stopped.
 - **Real-time speed in Status column**: AWS downloads show live `MB/s` speed next to each run's progress bar.
 - **Smooth Overall Progress**: Overall progress is now computed from the average percentage across all runs instead of counting completed runs.
@@ -32,9 +32,9 @@ By default, EBIDownload utilizes **AWS S3 global acceleration** to achieve ultra
 - **Clean script rewritten in Python**: `clean.sh` has been replaced with `clean.py` for cross-platform cleanup.
 - **Public S3 reference databases**: The `public-data` command downloads one YAML-selected public database at a time, with anonymous S3 access, resumable HTTP ranges, object filtering, and dry-run preview.
 
-![EBIDownload GUI](./docs/GUI.png)
+![Polariseq GUI](./docs/GUI.png)
 
-*The EBIDownload desktop GUI: Download, Upload, Settings, and About tabs.*
+*The Polariseq desktop GUI: Download, Upload, Settings, and About tabs.*
 
 ## Features
 
@@ -65,23 +65,23 @@ After [building](#3-building-the-program) the CLI, you can start downloading dat
 
 ```bash
 # 1. Install the required sra-tools dependency automatically
-./target/release/EBIDownload deps install
+./target/release/polariseq deps install
 
 # 2. Download a project by BioProject ID using AWS S3 acceleration (default)
-./target/release/EBIDownload download -A PRJNA1251654 -o ./data
+./target/release/polariseq download -A PRJNA1251654 -o ./data
 
 # 3. Download with more parallelism for large datasets
-./target/release/EBIDownload download -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
+./target/release/polariseq download -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
 ```
 
-For **GEO datasets**, find the associated **BioProject ID** on the GEO record page (usually under "SRA" or "BioProject" links) and pass it to EBIDownload:
+For **GEO datasets**, find the associated **BioProject ID** on the GEO record page (usually under "SRA" or "BioProject" links) and pass it to Polariseq:
 
 ```bash
 # Download GEO data via its BioProject ID at high speed
-./target/release/EBIDownload download -A PRJNA833659 -o ./data -p 4 -t 8
+./target/release/polariseq download -A PRJNA833659 -o ./data -p 4 -t 8
 ```
 
-Run `./target/release/EBIDownload --help` or `./target/release/EBIDownload download --help` for the full list of options.
+Run `./target/release/polariseq --help` or `./target/release/polariseq download --help` for the full list of options.
 
 ---
 
@@ -92,7 +92,7 @@ Since the raw data downloaded from NCBI/EBI is typically in `.sra` format, it mu
 
 Only one external dependency is required:
 
-- **`sra-tools` (`prefetch` / `fasterq-dump`)**: Required for `prefetch` downloads and `.sra` → `.fastq` conversion. EBIDownload can **automatically download and install** this for you (see [Dependency Management](#3b-dependency-management)). You can also install it manually if you prefer.
+- **`sra-tools` (`prefetch` / `fasterq-dump`)**: Required for `prefetch` downloads and `.sra` → `.fastq` conversion. Polariseq can **automatically download and install** this for you (see [Dependency Management](#3b-dependency-management)). You can also install it manually if you prefer.
 
 ### a. Conda Environment (optional manual install)
 
@@ -100,8 +100,8 @@ If you prefer Conda, you can create an isolated runtime environment to install `
 
 ```bash
 # Create and activate the conda environment using the provided .yaml file
-conda env create -f ./docs/EBIDownload_env.yaml
-conda activate EBIDownload_env
+conda env create -f ./docs/polariseq_env.yaml
+conda activate polariseq_env
 ```
 
 ---
@@ -112,9 +112,9 @@ This project is organized as a Rust workspace with three crates:
 
 ```
 crates/
-├── ebidownload-core/     # Shared library: download/upload logic + data types
-├── ebidownload-cli/      # Command-line tool
-└── ebidownload-gui/      # Tauri desktop application (Rust backend + React frontend)
+├── polariseq-core/     # Shared library: download/upload logic + data types
+├── polariseq-cli/      # Command-line tool
+└── polariseq-gui/      # Tauri desktop application (Rust backend + React frontend)
 ```
 
 The **core** crate contains all shared business logic (AWS S3, FTP, Aspera, Prefetch, S3 Upload). Both CLI and GUI depend on it, ensuring consistent behavior across interfaces.
@@ -127,40 +127,40 @@ The **core** crate contains all shared business logic (AWS S3, FTP, Aspera, Pref
 
 - [Rust](https://www.rust-lang.org/tools/install) toolchain
 - [Node.js](https://nodejs.org/) 18+ (only for GUI build)
-- `sra-tools` is **optional at build time** — you can let EBIDownload install it automatically later (see [Dependency Management](#3b-dependency-management))
+- `sra-tools` is **optional at build time** — you can let Polariseq install it automatically later (see [Dependency Management](#3b-dependency-management))
 
 ### a. Build CLI Only
 
 ```bash
 # Build CLI for development
-CC=clang cargo build -p ebidownload-cli
+CC=clang cargo build -p polariseq-cli
 
 # Build CLI for release
-CC=clang cargo build -p ebidownload-cli --release
+CC=clang cargo build -p polariseq-cli --release
 
 # Run CLI
-./target/release/EBIDownload --help
+./target/release/polariseq --help
 
 # Automatically install the required sra-tools dependency
-./target/release/EBIDownload deps install
+./target/release/polariseq deps install
 ```
 
 ### b. Dependency Management
 
-EBIDownload can automatically download, verify, and configure NCBI `sra-tools` so you do not have to install it manually.
+Polariseq can automatically download, verify, and configure NCBI `sra-tools` so you do not have to install it manually.
 
 ```bash
-# Install sra-tools into a managed directory and write the paths to EBIDownload.yaml
-./target/release/EBIDownload deps install
+# Install sra-tools into a managed directory and write the paths to polariseq.yaml
+./target/release/polariseq deps install
 
 # Check whether sra-tools is available (config → managed dir → PATH)
-./target/release/EBIDownload deps check
+./target/release/polariseq deps check
 
 # List detected sra-tools paths
-./target/release/EBIDownload deps list
+./target/release/polariseq deps list
 
 # Remove the managed sra-tools installation
-./target/release/EBIDownload deps remove
+./target/release/polariseq deps remove
 ```
 
 The GUI also performs this check automatically on startup. If `sra-tools` is missing, it shows a one-click install dialog and downloads the correct pre-built release for your platform.
@@ -182,16 +182,16 @@ Tauri **does not support cross-compilation**. You must build on the target platf
 xcode-select --install
 
 # 2. Build
-cd crates/ebidownload-gui
+cd crates/polariseq-gui
 npm install
 npm run tauri build
 
 # 3. Output
-#   Intel Mac:    src-tauri/target/release/bundle/dmg/EBIDownload_1.4.0_x64.dmg
-#   Apple Silicon: src-tauri/target/release/bundle/dmg/EBIDownload_1.4.0_aarch64.dmg
+#   Intel Mac:    src-tauri/target/release/bundle/dmg/Polariseq_1.4.0_x64.dmg
+#   Apple Silicon: src-tauri/target/release/bundle/dmg/Polariseq_1.4.0_aarch64.dmg
 ```
 
-`sra-tools` will be installed automatically on first GUI launch if it is not found. If you prefer to use your own installation, create `EBIDownload.yaml` before running:
+`sra-tools` will be installed automatically on first GUI launch if it is not found. If you prefer to use your own installation, create `polariseq.yaml` before running:
 
 ```yaml
 # Apple Silicon Mac (M1/M2/M3)
@@ -204,13 +204,13 @@ software:
 
 ```powershell
 # 1. Build (in PowerShell or CMD)
-cd crates/ebidownload-gui
+cd crates/polariseq-gui
 npm install
 npm run tauri build
 
 # 2. Output
-#    src-tauri\target\release\bundle\msi\EBIDownload_1.4.0_x64_en-US.msi
-#    src-tauri\target\release\bundle\nsis\EBIDownload_1.4.0_x64-setup.exe
+#    src-tauri\target\release\bundle\msi\Polariseq_1.4.0_x64_en-US.msi
+#    src-tauri\target\release\bundle\nsis\Polariseq_1.4.0_x64-setup.exe
 ```
 
 `sra-tools` will be installed automatically on first GUI launch if it is not found.
@@ -225,13 +225,13 @@ sudo apt-get update
 sudo apt-get install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
 # 2. Build
-cd crates/ebidownload-gui
+cd crates/polariseq-gui
 npm install
 npm run tauri build
 
 # 3. Output
-#    src-tauri/target/release/bundle/appimage/ebidownload_1.4.0_amd64.AppImage
-#    src-tauri/target/release/bundle/deb/ebidownload_1.4.0_amd64.deb
+#    src-tauri/target/release/bundle/appimage/polariseq_1.4.0_amd64.AppImage
+#    src-tauri/target/release/bundle/deb/polariseq_1.4.0_amd64.deb
 ```
 
 `sra-tools` will be installed automatically on first GUI launch if it is not found.
@@ -247,7 +247,7 @@ python3 clean.py
 After cleaning, rebuild the GUI with:
 
 ```bash
-cd crates/ebidownload-gui
+cd crates/polariseq-gui
 npm install
 npm run tauri dev
 ```
@@ -274,11 +274,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: cd crates/ebidownload-gui && npm install && npm run tauri build
+      - run: cd crates/polariseq-gui && npm install && npm run tauri build
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.platform }}
-          path: crates/ebidownload-gui/src-tauri/target/release/bundle/*
+          path: crates/polariseq-gui/src-tauri/target/release/bundle/*
 ```
 
 ---
@@ -287,16 +287,16 @@ jobs:
 
 This program uses a YAML file to configure the paths for external tools, including `sra-tools` (`prefetch`, `fasterq-dump`).
 
-**CLI default location**: `EBIDownload.yaml` beside the `EBIDownload` executable. Use the global `-y, --yaml <FILE>` option to choose another path. If the default file is absent, the CLI reports the exact path it attempted to load.
+**CLI default location**: `polariseq.yaml` beside the `polariseq` executable. Use the global `-y, --yaml <FILE>` option to choose another path. If the default file is absent, the CLI reports the exact path it attempted to load.
 
-`sra-tools` paths are optional: if they are not present in the YAML file, EBIDownload falls back to a managed installation (created by `EBIDownload deps install` or the GUI's startup install dialog) and finally to executables found in your `PATH`.
+`sra-tools` paths are optional: if they are not present in the YAML file, Polariseq falls back to a managed installation (created by `polariseq deps install` or the GUI's startup install dialog) and finally to executables found in your `PATH`.
 
 You can **manually create** this file if you want to use your own installations.
 
-Below is the standard format for the `EBIDownload.yaml` file:
+Below is the standard format for the `polariseq.yaml` file:
 
 ```yaml
-# EBIDownload Setting yaml
+# Polariseq Setting yaml
 software:
   prefetch: /path/to/your/prefetch
   fasterq_dump: /path/to/your/fasterq-dump
@@ -327,10 +327,10 @@ public_data:
 
 The GUI provides an intuitive interface for users who prefer visual operation over command-line tools.
 
-![EBIDownload GUI Tabs](./docs/GUI.png)
+![Polariseq GUI Tabs](./docs/GUI.png)
 
 ```bash
-cd crates/ebidownload-gui
+cd crates/polariseq-gui
 npm run tauri dev
 ```
 
@@ -341,7 +341,7 @@ npm run tauri dev
 | **Download** | Enter Accession ID, select output directory, choose download method (AWS/FTP/Prefetch/Auto), set parallel threads, and start downloading. Supports fetching metadata preview before download. |
 | **Upload** | Select files, enter S3 bucket name, configure upload settings, and submit to NCBI SRA via AWS S3. Shows real per-file upload progress and forwards core logs to the live log panel. |
 | **Settings** | Visually configure paths for `prefetch`, `fasterq-dump`, and other software executables. |
-| **About** | Software information, version, a "View on GitHub" link to the [project repository](https://github.com/xsx123123/EBIDownload), and a reflection on the atoms that make us all. |
+| **About** | Software information, version, a "View on GitHub" link to the [project repository](https://github.com/xsx123123/polariseq), and a reflection on the atoms that make us all. |
 
 A circular **theme toggle button** in the top-right corner of the header switches between dark and light modes. Your preference is stored locally and restored on the next launch. The UI follows an **Apple-inspired design language**: translucent cards, sticky segmented tabs, pill buttons with press feedback, and system fonts with careful tracking/leading.
 
@@ -351,7 +351,7 @@ A circular **theme toggle button** in the top-right corner of the header switche
 - Smooth Overall Progress based on the average completion across all runs
 - Pause / Stop controls for AWS downloads
 - Live log panel showing download/conversion/compression/upload status, including logs emitted from the Rust core
-- Logs mirrored to `output/EBIDownload.log` during each download run
+- Logs mirrored to `output/polariseq.log` during each download run
 - Auto-collapse configuration cards and auto-expand progress panel when a download starts
 - Dry-run mode to preview what would be downloaded
 - Support for TSV file input (batch download)
@@ -364,7 +364,7 @@ A circular **theme toggle button** in the top-right corner of the header switche
 #### a. Command-Line Arguments
 
 ```
-./target/release/EBIDownload download -h
+./target/release/polariseq download -h
 ```
 
 | Short | Long             | Description                                      | Default      |
@@ -374,7 +374,7 @@ A circular **theme toggle button** in the top-right corner of the header switche
 | `-o`  | `--output`       | **Required**, the output directory for downloaded files |              |
 | `-p`  | `--multithreads` | Number of files to download in parallel          | 4            |
 | `-d`  | `--download`     | Download method (`aws`, `ftp`, `prefetch`, `auto`) | `aws`        |
-| `-y`  | `--yaml`         | Specify the path to the `EBIDownload.yaml` config file | `EBIDownload.yaml` |
+| `-y`  | `--yaml`         | Specify the path to the `polariseq.yaml` config file | `polariseq.yaml` |
 |       | `--log-level`    | Log level (`debug`, `info`, `warn`, `error`)     | `info`       |
 |       | `--log-format`   | Log output format (`text`, `json`)               | `text`       |
 | `-t`  | `--aws-threads`  | **AWS/Prefetch**: Threads for internal chunk download or conversion per file | 8            |
@@ -396,20 +396,20 @@ A circular **theme toggle button** in the top-right corner of the header switche
 
 #### b. Public Reference Data from S3
 
-`public-data` reads the `public_data` map from `EBIDownload.yaml`. You must select exactly one YAML identifier with `--name`; running `public-data` without arguments prints help and never downloads every configured entry.
+`public-data` reads the `public_data` map from `polariseq.yaml`. You must select exactly one YAML identifier with `--name`; running `public-data` without arguments prints help and never downloads every configured entry.
 
 ```bash
 # Download the YAML entry named ncbi_nt
-./target/release/EBIDownload public-data --name ncbi_nt --output ./dbs
+./target/release/polariseq public-data --name ncbi_nt --output ./dbs
 
 # Override the default YAML location
-./target/release/EBIDownload public-data -y /path/to/databases.yaml --name k2_viral --output ./dbs
+./target/release/polariseq public-data -y /path/to/databases.yaml --name k2_viral --output ./dbs
 
 # Preview matching objects without downloading data
-./target/release/EBIDownload public-data --name ncbi_nt --dry-run
+./target/release/polariseq public-data --name ncbi_nt --dry-run
 
 # Tune file concurrency, per-file HTTP ranges, and range size (MiB)
-./target/release/EBIDownload public-data --name k2_viral -p 4 -t 2 --chunk-size 32 --output ./dbs
+./target/release/polariseq public-data --name k2_viral -p 4 -t 2 --chunk-size 32 --output ./dbs
 ```
 
 | Option | Description | Default |
@@ -426,14 +426,14 @@ Folder sources use `exclude` first and then `include` as an override. For exampl
 
 ##### Verifying downloaded BLAST databases
 
-For `ncbi_nt` and `ncbi_nr`, EBIDownload already validates every volume with `blastdbcmd -info` during the download and retries corrupted volumes automatically. After the download finishes, you can also run a manual integrity check with NCBI's own tools or with the built-in `validate` subcommand.
+For `ncbi_nt` and `ncbi_nr`, Polariseq already validates every volume with `blastdbcmd -info` during the download and retries corrupted volumes automatically. After the download finishes, you can also run a manual integrity check with NCBI's own tools or with the built-in `validate` subcommand.
 
 ```bash
 # Validate all volumes in a downloaded database directory
-./target/release/EBIDownload validate -d ./dbs/nr -t prot
+./target/release/polariseq validate -d ./dbs/nr -t prot
 
 # Use a specific blastdbcmd binary
-./target/release/EBIDownload validate -d ./dbs/nt -t nucl --tool /usr/bin/blastdbcmd
+./target/release/polariseq validate -d ./dbs/nt -t nucl --tool /usr/bin/blastdbcmd
 ```
 
 For manual checks with NCBI BLAST+:
@@ -457,7 +457,7 @@ Replace `<output_dir>/nt` or `<output_dir>/nr` with the actual path to the datab
 
 ##### Taxonomy database (`taxdb`) for BLAST
 
-After downloading `nt` / `nr` with EBIDownload, BLAST may still report:
+After downloading `nt` / `nr` with Polariseq, BLAST may still report:
 
 ```text
 BLASTDB::ncbi::CSeqDBImpl::GetTaxInfo() - Taxid 9606 not found
@@ -490,7 +490,7 @@ This mode uses AWS S3 buckets for global acceleration, similar to IDM. It is the
 
 ```bash
 # Download using AWS S3 with 8 threads per file, processing 4 files in parallel
-./target/release/EBIDownload download -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
+./target/release/polariseq download -A PRJNA1251654 -o ./data -d aws -p 4 -t 8
 ```
 
 **2. Filtering Mode**
@@ -499,14 +499,14 @@ You can use `--filter-run` or `--filter-sample` to download specific data.
 
 ```bash
 # Download a specific Run from a project
-./target/release/EBIDownload download -A PRJNA833659 -o ./ -p 6 -d aws -y ./EBIDownload.yaml --chunk-size 200 --filter-run SRR19019104
+./target/release/polariseq download -A PRJNA833659 -o ./ -p 6 -d aws -y ./polariseq.yaml --chunk-size 200 --filter-run SRR19019104
 
 # Download multiple specified Runs (separated by spaces)
-./target/release/EBIDownload download -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
+./target/release/polariseq download -A PRJNA833659 -o ./ -p 6 -d aws --filter-run SRR19019104 SRR19019105
 
 # Download a list of specific Runs from a project (useful for targeted re-analysis)
-./target/release/EBIDownload download -A PRJNA259308 -o ./ -p 6 -d aws \
-  -y ./EBIDownload.yaml \
+./target/release/polariseq download -A PRJNA259308 -o ./ -p 6 -d aws \
+  -y ./polariseq.yaml \
   --chunk-size 200 \
   --filter-run SRR1572540 SRR1572541 SRR1572542 
 ```
@@ -517,10 +517,10 @@ The following example demonstrates how to download data for project `PRJNA125165
 
 ```bash
 # Make sure you have activated the conda environment and the config file is set up correctly
-# conda activate EBIDownload_env
+# conda activate polariseq_env
 
 # Example command:
-./target/release/EBIDownload download -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./EBIDownload.yaml -d prefetch
+./target/release/polariseq download -A PRJNA1251654 -o ./ --multithreads 6 --yaml ./polariseq.yaml -d prefetch
 ```
 
 #### d. MD5 Checksums
@@ -529,10 +529,10 @@ The `md5` subcommand generates and verifies md5sum-compatible manifests for any 
 
 ```bash
 # Hash every file under a directory into an md5sum-compatible manifest
-./target/release/EBIDownload md5 generate -i /path/to/files -o md5.txt
+./target/release/polariseq md5 generate -i /path/to/files -o md5.txt
 
 # Verify files against an existing manifest
-./target/release/EBIDownload md5 verify -i md5.txt -d /path/to/files
+./target/release/polariseq md5 verify -i md5.txt -d /path/to/files
 ```
 
 | Option | Description | Default |
@@ -544,7 +544,7 @@ The `md5` subcommand generates and verifies md5sum-compatible manifests for any 
 
 Manifest lines use the standard `<md5>  <filename>` format, so they can also be checked with `md5sum -c md5.txt`. `md5 verify` logs a per-file ✅/❌ result, prints a pass/fail summary, and exits non-zero if any file is missing or mismatched.
 
-The subcommand writes its own log as `EBIDownload_md5_<timestamp>.log` next to the data. Both `generate` and `verify` automatically skip these `EBIDownload_md5_*.log` files, and `generate` never includes the output manifest itself, so re-running the command in the same directory stays idempotent.
+The subcommand writes its own log as `polariseq_md5_<timestamp>.log` next to the data. Both `generate` and `verify` automatically skip these `polariseq_md5_*.log` files, and `generate` never includes the output manifest itself, so re-running the command in the same directory stays idempotent.
 
 ---
 
@@ -580,8 +580,8 @@ After the script runs, the output directory will contain the following files and
 
 ```
 .
-├── EBIDownload_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log
-├── EBIDownload.log                         (GUI per-run log, when using the GUI)
+├── Polariseq_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log
+├── polariseq.log                         (GUI per-run log, when using the GUI)
 ├── ena_metadata_{ACCESSION}.tsv
 ├── R1_fastq_md5_{ACCESSION}.tsv
 ├── R2_fastq_md5_{ACCESSION}.tsv
@@ -590,10 +590,10 @@ After the script runs, the output directory will contain the following files and
 └── ...
 ```
 
-- **Log File**: `EBIDownload_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log`
+- **Log File**: `Polariseq_{ACCESSION}_YYYY-MM-DD_HH-MM-SS.log`
   - Records the detailed execution log of the script, with the Accession ID in the filename for easy identification.
 
-- **GUI Log File**: `EBIDownload.log`
+- **GUI Log File**: `polariseq.log`
   - Created in the selected output directory when a GUI download starts. It mirrors the same logs shown in the live log panel and is overwritten on each new download.
 
 - **Metadata File**: `ena_metadata_{ACCESSION}.tsv`
@@ -611,7 +611,7 @@ After the script runs, the output directory will contain the following files and
 
 > **⚠️ Experimental**: The upload subcommand / GUI tab is still under testing. Please verify your uploads and use with caution.
 
-In addition to downloading, EBIDownload supports **uploading sequencing data to AWS S3** for fast NCBI SRA submission. This is useful when you need to submit large volumes of data (hundreds of GB to TB scale) and want to leverage AWS's enterprise-grade bandwidth for reliable, high-speed uploads.
+In addition to downloading, Polariseq supports **uploading sequencing data to AWS S3** for fast NCBI SRA submission. This is useful when you need to submit large volumes of data (hundreds of GB to TB scale) and want to leverage AWS's enterprise-grade bandwidth for reliable, high-speed uploads.
 
 ### a. Prerequisites
 
@@ -622,7 +622,7 @@ In addition to downloading, EBIDownload supports **uploading sequencing data to 
 
 The S3-based SRA submission uses a **read-only permission model** — you don't give NCBI any credentials:
 
-1. **Upload files** to your S3 bucket using your own AWS key (handled by `EBIDownload upload`)
+1. **Upload files** to your S3 bucket using your own AWS key (handled by `polariseq upload`)
 2. **Apply Bucket Policy** to authorize NCBI's IAM user (`arn:aws:iam::228184908524:user/SA-SubmissionPortal-S3`) with read-only access (handled by `--apply-policy`)
 3. **Submit on the SRA Portal** ([https://submit.ncbi.nlm.nih.gov/subs/sra/](https://submit.ncbi.nlm.nih.gov/subs/sra/)), select "Upload from Amazon S3 storage" and provide your S3 paths
 
@@ -657,19 +657,19 @@ The actual cost is **storage only**. For example, 100 GB of data stored for 2 we
 
 ```bash
 # Basic upload to S3
-EBIDownload upload -b my-sra-bucket -f sample_R1.fastq.gz sample_R2.fastq.gz
+polariseq upload -b my-sra-bucket -f sample_R1.fastq.gz sample_R2.fastq.gz
 
 # Upload with NCBI Bucket Policy + metadata template generation
-EBIDownload upload -b my-sra-bucket \
+polariseq upload -b my-sra-bucket \
     -f sample_R1.fastq.gz sample_R2.fastq.gz \
     --apply-policy \
     --metadata-template sra_metadata.tsv
 
 # Dry run: preview files without uploading
-EBIDownload upload -b my-sra-bucket -f *.fastq.gz --dry-run
+polariseq upload -b my-sra-bucket -f *.fastq.gz --dry-run
 
 # Upload with S3 key prefix (subdirectory)
-EBIDownload upload -b my-sra-bucket --prefix project_001 -f *.fastq.gz
+polariseq upload -b my-sra-bucket --prefix project_001 -f *.fastq.gz
 ```
 
 | Option | Description | Default |
@@ -687,7 +687,7 @@ EBIDownload upload -b my-sra-bucket --prefix project_001 -f *.fastq.gz
 
 | Method | Cost | Speed | Best For |
 |--------|------|-------|----------|
-| **S3 Upload** (`EBIDownload upload`) | ~$0.023/GB/month | Fastest, most reliable | Large datasets (100 GB+), unstable networks |
+| **S3 Upload** (`polariseq upload`) | ~$0.023/GB/month | Fastest, most reliable | Large datasets (100 GB+), unstable networks |
 | **NCBI Web Upload** | Free | Slow, unreliable for large files | Small datasets (< 10 GB) |
 
 > **Tip**: If your data is small, use the free NCBI Web Upload. S3 upload is a "pay a little for speed and reliability" option — ideal when you have hundreds of GB to submit and want enterprise-grade bandwidth with resumable transfers.
@@ -699,7 +699,7 @@ EBIDownload upload -b my-sra-bucket --prefix project_001 -f *.fastq.gz
 aws s3 mb s3://my-sra-bucket --region us-east-1
 
 # Step 2: Upload files + apply NCBI policy + generate metadata template
-EBIDownload upload -b my-sra-bucket \
+polariseq upload -b my-sra-bucket \
     -f sample1_R1.fastq.gz sample1_R2.fastq.gz \
        sample2_R1.fastq.gz sample2_R2.fastq.gz \
     --apply-policy \
@@ -722,45 +722,45 @@ aws s3 rb s3://my-sra-bucket --force
 
 ## 8. HTTP Progress API (Encrypted)
 
-EBIDownload CLI provides an optional **HTTP Progress API** that allows external platforms to query real-time download progress. The progress data is encrypted with **AES-256-GCM** to ensure security.
+Polariseq CLI provides an optional **HTTP Progress API** that allows external platforms to query real-time download progress. The progress data is encrypted with **AES-256-GCM** to ensure security.
 
 ### a. Overview
 
-When enabled via `--progress-port`, EBIDownload starts an HTTP server that serves encrypted progress data. The encryption key is:
-- **Generated at compile time** (via `EBIDOWNLOAD_PROGRESS_KEY` env var) and embedded in the binary
+When enabled via `--progress-port`, Polariseq starts an HTTP server that serves encrypted progress data. The encryption key is:
+- **Generated at compile time** (via `POLARISEQ_PROGRESS_KEY` env var) and embedded in the binary
 - **NOT written to disk by default** — add `--write-progress-key` to write it to `progress.key` in the output directory
 - **Never exposed via HTTP** — no HTTP endpoint returns the key
 
 The platform can obtain the key in two ways:
-1. **Known at compile time**: If your platform set `EBIDOWNLOAD_PROGRESS_KEY` before compilation, it already knows the key — no file needed
+1. **Known at compile time**: If your platform set `POLARISEQ_PROGRESS_KEY` before compilation, it already knows the key — no file needed
 2. **Read from file**: Use `--write-progress-key` at runtime to write the key to `progress.key`, then read it from the output directory
 
 ### b. Compile with Custom Key
 
-You can set a custom encryption key at compile time using the `EBIDOWNLOAD_PROGRESS_KEY` environment variable:
+You can set a custom encryption key at compile time using the `POLARISEQ_PROGRESS_KEY` environment variable:
 
 ```bash
 # Generate a random 32-character key (or use your own)
-export EBIDOWNLOAD_PROGRESS_KEY=$(openssl rand -hex 16)
-echo "Your key: $EBIDOWNLOAD_PROGRESS_KEY"
+export POLARISEQ_PROGRESS_KEY=$(openssl rand -hex 16)
+echo "Your key: $POLARISEQ_PROGRESS_KEY"
 
 # Build with the custom key embedded
-CC=clang cargo build -p ebidownload-cli --release
+CC=clang cargo build -p polariseq-cli --release
 
 # The key is now embedded in the binary
-./target/release/EBIDownload --version
+./target/release/polariseq --version
 ```
 
-If `EBIDOWNLOAD_PROGRESS_KEY` is not set, a deterministic key is derived from the crate version.
+If `POLARISEQ_PROGRESS_KEY` is not set, a deterministic key is derived from the crate version.
 
 ### c. Enable Progress API at Runtime
 
 ```bash
 # Start download with progress API on port 8080
-./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080
+./target/release/polariseq download -A PRJNA1251654 -o ./data --progress-port 8080
 
 # If external platforms need to read the key from file, add --write-progress-key
-./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080 --write-progress-key
+./target/release/polariseq download -A PRJNA1251654 -o ./data --progress-port 8080 --write-progress-key
 ```
 
 By default, the encryption key is **not** written to disk. Add `--write-progress-key` to write it to `./data/progress.key`. This will:
@@ -863,14 +863,14 @@ The decrypted JSON contains per-run progress with 3-stage weighted tracking:
 
 ```bash
 # 1. Compile with custom key
-export EBIDOWNLOAD_PROGRESS_KEY="my-secret-key-1234567890abcdef"
-CC=clang cargo build -p ebidownload-cli --release
+export POLARISEQ_PROGRESS_KEY="my-secret-key-1234567890abcdef"
+CC=clang cargo build -p polariseq-cli --release
 
 # 2. Start download with progress API (key NOT written to disk by default)
-./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080
+./target/release/polariseq download -A PRJNA1251654 -o ./data --progress-port 8080
 
 # 3. If platform needs to read key from file, use --write-progress-key
-./target/release/EBIDownload download -A PRJNA1251654 -o ./data --progress-port 8080 --write-progress-key
+./target/release/polariseq download -A PRJNA1251654 -o ./data --progress-port 8080 --write-progress-key
 
 # 4. In another terminal / platform, query progress
 #    (platform already knows the key from compile time, or reads progress.key)
@@ -882,7 +882,7 @@ python3 decrypt_progress.py
 
 ### i. md5.txt Output
 
-After all downloads complete, EBIDownload automatically generates `md5.txt` in the output directory:
+After all downloads complete, Polariseq automatically generates `md5.txt` in the output directory:
 
 ```bash
 $ cat ./data/md5.txt
@@ -904,5 +904,5 @@ md5sum -c md5.txt
 **Author**: JZHANG | **Version**: v1.4.1
 
 ## 🔗 Links
-- GitHub: [repository](https://github.com/xsx123123/EBIDownload)
+- GitHub: [repository](https://github.com/xsx123123/polariseq)
 - LINUX DO: [Announcement](https://linux.do/) (Original)

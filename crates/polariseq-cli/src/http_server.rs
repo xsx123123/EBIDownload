@@ -7,7 +7,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use base64::engine::general_purpose;
 use base64::Engine;
-use ebidownload_core::progress_store::ProgressStore;
+use polariseq_core::progress_store::ProgressStore;
 use rand::Rng;
 use std::sync::Arc;
 

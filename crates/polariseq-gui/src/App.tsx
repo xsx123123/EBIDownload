@@ -71,7 +71,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<'download' | 'upload' | 'settings' | 'about'>('download');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window === 'undefined') return 'dark';
-    const saved = window.localStorage.getItem('ebidownload-theme');
+    const saved = window.localStorage.getItem('polariseq-theme');
     if (saved === 'light' || saved === 'dark') return saved;
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
   });
@@ -134,7 +134,7 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try {
-      window.localStorage.setItem('ebidownload-theme', theme);
+      window.localStorage.setItem('polariseq-theme', theme);
     } catch (_) {
       // ignore storage errors (e.g. private mode)
     }
@@ -251,7 +251,7 @@ function App() {
   const handleSelectConfigPath = async () => {
     const selected = await save({
       filters: [{ name: 'YAML', extensions: ['yaml', 'yml'] }],
-      defaultPath: 'EBIDownload.yaml',
+      defaultPath: 'polariseq.yaml',
     });
     if (selected) {
       try {
@@ -519,7 +519,7 @@ function App() {
 
             <h2>sra-tools not found</h2>
             <p className="modal-subtitle">
-              EBIDownload needs NCBI <code>sra-tools</code> (<code>prefetch</code> & <code>fasterq-dump</code>) to download SRA data.
+              Polariseq needs NCBI <code>sra-tools</code> (<code>prefetch</code> & <code>fasterq-dump</code>) to download SRA data.
             </p>
 
             {depInfo?.status === 'Missing' && (
@@ -623,7 +623,7 @@ function App() {
             </svg>
           )}
         </button>
-        <h1>EBIDownload</h1>
+        <h1>Polariseq</h1>
         <p className="header-subtitle">Automated Bioinformatics Data Retrieval</p>
       </div>
 
@@ -1461,7 +1461,7 @@ function SettingsTab({
               type="text"
               value={configPath}
               readOnly
-              placeholder="Path to EBIDownload.yaml"
+              placeholder="Path to polariseq.yaml"
             />
             <button className="btn btn-secondary" onClick={onSelectConfigPath}>
               Browse
@@ -1528,7 +1528,7 @@ function AboutTab() {
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
         </div>
-        <h1>EBIDownload</h1>
+        <h1>Polariseq</h1>
         <p className="about-version">Version 1.4.1</p>
         <p className="about-description">
           A high-performance tool for downloading sequencing data from ENA/SRA.
@@ -1537,7 +1537,7 @@ function AboutTab() {
         <div className="about-links">
           <a
             className="about-link"
-            href="https://github.com/xsx123123/EBIDownload"
+            href="https://github.com/xsx123123/polariseq"
             target="_blank"
             rel="noopener noreferrer"
           >

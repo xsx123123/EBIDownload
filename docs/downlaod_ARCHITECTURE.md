@@ -3,9 +3,9 @@
 本文仅汇总当前实现的下载架构与模块职责，不包含新增功能的设计或实现方案。项目是一个 Rust workspace，由核心库、CLI 和 Tauri GUI 组成：
 
 ```text
-ebidownload-cli ─┐
-                  ├── ebidownload-core ── ENA / NCBI / EBI 网络服务
-ebidownload-gui ─┘          │
+polariseq-cli ─┐
+                  ├── polariseq-core ── ENA / NCBI / EBI 网络服务
+polariseq-gui ─┘          │
                               ├── wget（FTP FASTQ 下载）
                               ├── prefetch + fasterq-dump（SRA Toolkit）
                               └── HTTP Range（NCBI SRA 的 AWS 公共副本）
@@ -15,15 +15,15 @@ ebidownload-gui ─┘          │
 
 | 层级 | 位置 | 当前职责 |
 | --- | --- | --- |
-| 核心库 | `crates/ebidownload-core` | 领域模型、元数据读取与筛选、三个下载后端、压缩、校验、进度模型、SRA Toolkit 依赖管理及 S3 上传。 |
-| 命令行入口 | `crates/ebidownload-cli` | 使用 `clap` 解析参数；加载配置；组织下载流水线；显示日志/终端进度；可选提供进度 HTTP API。 |
-| GUI 入口 | `crates/ebidownload-gui/src-tauri` | 提供 Tauri 命令、下载状态事件以及暂停/取消控制；其中保留了一部分下载后处理调度代码。 |
+| 核心库 | `crates/polariseq-core` | 领域模型、元数据读取与筛选、三个下载后端、压缩、校验、进度模型、SRA Toolkit 依赖管理及 S3 上传。 |
+| 命令行入口 | `crates/polariseq-cli` | 使用 `clap` 解析参数；加载配置；组织下载流水线；显示日志/终端进度；可选提供进度 HTTP API。 |
+| GUI 入口 | `crates/polariseq-gui/src-tauri` | 提供 Tauri 命令、下载状态事件以及暂停/取消控制；其中保留了一部分下载后处理调度代码。 |
 
-`ebidownload-core` 是可复用的主要实现层。CLI 和 GUI 都依赖它，但两端并非只调用一个统一的高层 `download` 服务：它们各自完成方法分派以及部分「下载 SRA → `fasterq-dump` 转换 → gzip 压缩」流程。
+`polariseq-core` 是可复用的主要实现层。CLI 和 GUI 都依赖它，但两端并非只调用一个统一的高层 `download` 服务：它们各自完成方法分派以及部分「下载 SRA → `fasterq-dump` 转换 → gzip 压缩」流程。
 
 ## 2. 主要数据模型与输入准备
 
-核心定义位于 `crates/ebidownload-core/src/lib.rs`：
+核心定义位于 `crates/polariseq-core/src/lib.rs`：
 
 | 模型/函数 | 作用 |
 | --- | --- |
@@ -186,12 +186,12 @@ GUI: app.rs
 
 | 主题 | 源码位置 |
 | --- | --- |
-| 公共模型、ENA 元数据、筛选、压缩、配置校验 | `crates/ebidownload-core/src/lib.rs` |
-| FTP FASTQ 下载 | `crates/ebidownload-core/src/ftp.rs` |
-| SRA Toolkit 下载与转换 | `crates/ebidownload-core/src/prefetch.rs` |
-| NCBI SRA AWS 元数据发现与 HTTP 分片续传 | `crates/ebidownload-core/src/aws_s3.rs` |
-| 共享进度状态 | `crates/ebidownload-core/src/progress_store.rs` |
-| 终端进度样式 | `crates/ebidownload-core/src/progress.rs` |
-| SRA Toolkit 安装、发现和配置写入 | `crates/ebidownload-core/src/deps/mod.rs` |
-| CLI 编排与进度 HTTP API | `crates/ebidownload-cli/src/main.rs`、`crates/ebidownload-cli/src/http_server.rs` |
-| GUI 编排、Tauri 事件和暂停控制 | `crates/ebidownload-gui/src-tauri/src/app.rs` |
+| 公共模型、ENA 元数据、筛选、压缩、配置校验 | `crates/polariseq-core/src/lib.rs` |
+| FTP FASTQ 下载 | `crates/polariseq-core/src/ftp.rs` |
+| SRA Toolkit 下载与转换 | `crates/polariseq-core/src/prefetch.rs` |
+| NCBI SRA AWS 元数据发现与 HTTP 分片续传 | `crates/polariseq-core/src/aws_s3.rs` |
+| 共享进度状态 | `crates/polariseq-core/src/progress_store.rs` |
+| 终端进度样式 | `crates/polariseq-core/src/progress.rs` |
+| SRA Toolkit 安装、发现和配置写入 | `crates/polariseq-core/src/deps/mod.rs` |
+| CLI 编排与进度 HTTP API | `crates/polariseq-cli/src/main.rs`、`crates/polariseq-cli/src/http_server.rs` |
+| GUI 编排、Tauri 事件和暂停控制 | `crates/polariseq-gui/src-tauri/src/app.rs` |

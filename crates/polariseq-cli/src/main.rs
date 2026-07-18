@@ -22,32 +22,32 @@ use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{fmt, EnvFilter};
 
-use ebidownload_core::progress_store::{
+use polariseq_core::progress_store::{
     new_progress_store, ProgressStore, RunProgress, RunStage, StageProgress,
 };
-use ebidownload_core::observer::DownloadObserver;
-use ebidownload_core::*;
+use polariseq_core::observer::DownloadObserver;
+use polariseq_core::*;
 
 mod http_server;
 mod ui_manager;
 use ui_manager::{Mode, UiManager};
 
 const VERSION: &str = "1.4.1";
-const SCRIPT_NAME: &str = "EBIDownload";
+const SCRIPT_NAME: &str = "polariseq";
 
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 
 // Help logo: solid white, each line starts with ANSI so `\` line-continuation
 // does not strip the leading indent that follows the color codes.
 const HELP_LOGO: &str = "\n\n\
-\x1b[1;37m    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗\x1b[0m\n\
-\x1b[1;37m    ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗\x1b[0m\n\
-\x1b[1;37m    █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║\x1b[0m\n\
-\x1b[1;37m    ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║\x1b[0m\n\
-\x1b[1;37m    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝\x1b[0m\n\
-\x1b[1;37m    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝\x1b[0m\n\
+\x1b[1;37m    ██████╗  ██████╗ ██╗      █████╗ ██████╗ ██╗███████╗███████╗ ██████╗\x1b[0m\n\
+\x1b[1;37m    ██╔══██╗██╔═══██╗██║     ██╔══██╗██╔══██╗██║██╔════╝██╔════╝██╔═══██╗\x1b[0m\n\
+\x1b[1;37m    ██████╔╝██║   ██║██║     ███████║██████╔╝██║███████╗█████╗  ██║   ██║\x1b[0m\n\
+\x1b[1;37m    ██╔═══╝ ██║   ██║██║     ██╔══██║██╔══██╗██║╚════██║██╔══╝  ██║▄▄ ██║\x1b[0m\n\
+\x1b[1;37m    ██║     ╚██████╔╝███████╗██║  ██║██║  ██║██║███████║███████╗╚██████╔╝\x1b[0m\n\
+\x1b[1;37m    ╚═╝      ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝ ╚══▀▀═╝\x1b[0m\n\
 \n\
-\x1b[36m              EMBL-ENA Data Toolkit  │  v1.4.1\x1b[0m";
+\x1b[36m              Sequencing Data Toolkit  │  v1.4.1\x1b[0m";
 
 const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
@@ -87,7 +87,7 @@ struct Cli {
         long,
         global = true,
         value_name = "FILE",
-        help = "YAML configuration path (default: EBIDownload.yaml beside the executable)",
+        help = "YAML configuration path (default: polariseq.yaml beside the executable)",
         help_heading = "Global Options"
     )]
     yaml: Option<PathBuf>,
@@ -481,7 +481,7 @@ enum DepsSubcommand {
             short,
             long,
             value_name = "FILE",
-            help = "Path to EBIDownload.yaml to update",
+            help = "Path to polariseq.yaml to update",
             help_heading = "Install Options"
         )]
         yaml: Option<PathBuf>,
@@ -774,11 +774,11 @@ async fn main() -> ExitCode {
 
 fn default_yaml_path() -> Result<PathBuf> {
     let executable =
-        std::env::current_exe().context("Failed to locate the EBIDownload executable")?;
+        std::env::current_exe().context("Failed to locate the polariseq executable")?;
     let directory = executable
         .parent()
-        .ok_or_else(|| anyhow!("Failed to determine the EBIDownload executable directory"))?;
-    Ok(directory.join("EBIDownload.yaml"))
+        .ok_or_else(|| anyhow!("Failed to determine the polariseq executable directory"))?;
+    Ok(directory.join("polariseq.yaml"))
 }
 
 fn yaml_path(cli: &Cli) -> Result<PathBuf> {
@@ -799,7 +799,7 @@ async fn run_public_data(args: &PublicDataArgs, cli: &Cli) -> Result<()> {
         None
     };
 
-    let downloader = ebidownload_core::public_data::PublicDataDownloader::new()
+    let downloader = polariseq_core::public_data::PublicDataDownloader::new()
         .await?
         .with_workers(args.multithreads, args.aws_threads)
         .with_chunk_size_mb(args.chunk_size)
@@ -854,7 +854,7 @@ async fn run_validate(args: &ValidateArgs, cli: &Cli) -> Result<()> {
         return Err(anyhow!("Database directory {} does not exist", args.dir.display()));
     }
 
-    let result = ebidownload_core::public_data::validator::validate_all_volumes(
+    let result = polariseq_core::public_data::validator::validate_all_volumes(
         &args.dir,
         &args.dbtype,
         &tool_path,
@@ -897,7 +897,7 @@ async fn run_md5_command(args: &Md5Args, mp: Option<Arc<MultiProgress>>) -> Resu
                     fs::create_dir_all(parent)?;
                 }
             }
-            ebidownload_core::md5::generate_md5_manifest(
+            polariseq_core::md5::generate_md5_manifest(
                 &generate_args.input,
                 &generate_args.output,
                 generate_args.threads,
@@ -920,7 +920,7 @@ async fn run_md5_command(args: &Md5Args, mp: Option<Arc<MultiProgress>>) -> Resu
                     verify_args.dir.display()
                 ));
             }
-            let (passed, failed) = ebidownload_core::md5::verify_md5_manifest(
+            let (passed, failed) = polariseq_core::md5::verify_md5_manifest(
                 &verify_args.input,
                 &verify_args.dir,
                 verify_args.threads,
@@ -1074,7 +1074,7 @@ async fn run_download(args: &DownloadArgs, cli: &Cli) -> Result<()> {
 
 async fn run_upload(args: &UploadArgs) -> Result<()> {
     warn!("The upload subcommand is still under testing. Use with caution.");
-    ebidownload_core::upload::run_upload(
+    polariseq_core::upload::run_upload(
         &args.bucket,
         &args.prefix,
         &args.files,
@@ -1093,12 +1093,12 @@ async fn run_upload(args: &UploadArgs) -> Result<()> {
 // ============================================================
 
 async fn run_deps(args: &DepsArgs, cli: &Cli) -> Result<()> {
-    use ebidownload_core::deps::*;
+    use polariseq_core::deps::*;
 
     match &args.command {
         DepsSubcommand::Install { version, url, yaml } => {
             let pb = ProgressBar::new(0);
-            pb.set_style(ebidownload_core::progress::transfer_bar_style());
+            pb.set_style(polariseq_core::progress::transfer_bar_style());
             let pb_for_cb = pb.clone();
             let progress_cb: DepProgressCallback = Arc::new(move |event| match event {
                 DepProgressEvent::DownloadStarted { url, size } => {
@@ -1193,12 +1193,12 @@ fn print_banner() {
     // Full-string lines (not `\`-continued) so leading indent is preserved.
     // Single solid color — clean, not flashy.
     const LINES: &[&str] = &[
-        "    ███████╗██████╗ ██╗██████╗  ██████╗ ██╗      ██████╗  █████╗ ██████╗",
-        "    ██╔════╝██╔══██╗██║██╔══██╗██╔═══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗",
-        "    █████╗  ██████╔╝██║██║  ██║██║   ██║██║     ██║   ██║███████║██║  ██║",
-        "    ██╔══╝  ██╔══██╗██║██║  ██║██║   ██║██║     ██║   ██║██╔══██║██║  ██║",
-        "    ███████╗██████╔╝██║██████╔╝╚██████╔╝███████╗╚██████╔╝██║  ██║██████╔╝",
-        "    ╚══════╝╚═════╝ ╚═╝╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝",
+        "    ██████╗  ██████╗ ██╗      █████╗ ██████╗ ██╗███████╗███████╗ ██████╗",
+        "    ██╔══██╗██╔═══██╗██║     ██╔══██╗██╔══██╗██║██╔════╝██╔════╝██╔═══██╗",
+        "    ██████╔╝██║   ██║██║     ███████║██████╔╝██║███████╗█████╗  ██║   ██║",
+        "    ██╔═══╝ ██║   ██║██║     ██╔══██║██╔══██╗██║╚════██║██╔══╝  ██║▄▄ ██║",
+        "    ██║     ╚██████╔╝███████╗██║  ██║██║  ██║██║███████║███████╗╚██████╔╝",
+        "    ╚═╝      ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝ ╚══▀▀═╝",
     ];
 
     println!();
@@ -1208,7 +1208,7 @@ fn print_banner() {
     println!(
         "{}",
         Color::Cyan.paint(format!(
-            "              EMBL-ENA Data Toolkit  │  v{}",
+            "              Sequencing Data Toolkit  │  v{}",
             VERSION
         ))
     );
@@ -1424,7 +1424,7 @@ async fn download_with_prefetch(
     config: &Config,
     args: &DownloadArgs,
 ) -> Result<()> {
-    ebidownload_core::prefetch::download_all(
+    polariseq_core::prefetch::download_all(
         records,
         config,
         &args.output,
@@ -1514,7 +1514,7 @@ async fn download_with_aws(
                 }
             }
 
-            let metadata = ebidownload_core::aws_s3::SraUtils::get_metadata(&run_id, None).await?;
+            let metadata = polariseq_core::aws_s3::SraUtils::get_metadata(&run_id, None).await?;
             let sra_filename = format!("{}.sra", run_id);
             let sra_size = metadata.as_ref().map(|m| m.size).unwrap_or(0);
             info!(target: "download_detail", "[{}] Step 1: Downloading via AWS S3...", run_id);
@@ -1523,7 +1523,7 @@ async fn download_with_aws(
                 // Share the per-file byte counter with the status bar so the
                 // global speed aggregates this run while downloading.
                 let counter = ui.register(&run_id, sra_size);
-                let downloader = ebidownload_core::aws_s3::ResumableDownloader::new(
+                let downloader = polariseq_core::aws_s3::ResumableDownloader::new(
                     run_id.clone(),
                     sra_metadata,
                     output_dir.clone(),
@@ -1660,7 +1660,7 @@ async fn download_with_aws(
 
                 let compression_bytes = Arc::new(AtomicU64::new(0));
                 let cb_bytes = compression_bytes.clone();
-                let progress_cb: ebidownload_core::progress_store::CompressionProgressCallback =
+                let progress_cb: polariseq_core::progress_store::CompressionProgressCallback =
                     Arc::new(move |bytes_read, _total| {
                         cb_bytes.store(bytes_read, Ordering::Relaxed);
                     });
@@ -1686,7 +1686,7 @@ async fn download_with_aws(
                 let output_dir_compress = output_dir.clone();
                 let run_id_compress = run_id.clone();
                 tokio::task::spawn_blocking(move || {
-                    ebidownload_core::compress_fastq_files(
+                    polariseq_core::compress_fastq_files(
                         &output_dir_compress,
                         &run_id_compress,
                         process_threads,
@@ -1766,11 +1766,11 @@ async fn download_with_ftp(
     args: &DownloadArgs,
 ) -> Result<()> {
     // Call ftp.rs, pass file size to enable percentage progress bar
-    ebidownload_core::ftp::process_downloads(
+    polariseq_core::ftp::process_downloads(
         records,
         config,
         &args.output,
-        ebidownload_core::ftp::Protocol::Ftp,
+        polariseq_core::ftp::Protocol::Ftp,
         args.multithreads,
     )
     .await
