@@ -10,6 +10,7 @@
 //!
 //! No crossterm / keyboard interaction: this is purely a passive status line.
 
+use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -20,6 +21,9 @@ use tokio::task::JoinHandle;
 
 use ebidownload_core::observer::{CompletedInfo, DownloadObserver};
 use ebidownload_core::progress_store::{ProgressStore, RunStage};
+
+/// Window used for the smoothed aggregate speed on the status bar.
+const SPEED_WINDOW: Duration = Duration::from_secs(3);
 
 /// A finished download recorded for status-bar accounting (not displayed by
 /// default — auto-collapse is the only mode).
@@ -54,8 +58,8 @@ pub struct UiManager {
     live: Mutex<Vec<LiveCounter>>,
     completed: Mutex<Vec<CompletedRecord>>,
     failed: Mutex<Vec<String>>,
-    last_bytes: Mutex<u64>,
-    last_ts: Mutex<Instant>,
+    /// Sliding window of `(timestamp, live-byte-sum)` samples for smoothed speed.
+    speed_samples: Mutex<VecDeque<(Instant, u64)>>,
     tick_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -69,7 +73,6 @@ impl UiManager {
         status_pb.set_prefix("status");
         status_pb.enable_steady_tick(Duration::from_millis(100));
 
-        let now = Instant::now();
         let manager = Arc::new(Self {
             status_pb,
             mode,
@@ -77,8 +80,7 @@ impl UiManager {
             live: Mutex::new(Vec::new()),
             completed: Mutex::new(Vec::new()),
             failed: Mutex::new(Vec::new()),
-            last_bytes: Mutex::new(0),
-            last_ts: Mutex::new(now),
+            speed_samples: Mutex::new(VecDeque::new()),
             tick_handle: Mutex::new(None),
         });
 
@@ -121,14 +123,35 @@ impl UiManager {
             (sum, total, live.len())
         };
 
+        // Sliding-window average over SPEED_WINDOW to avoid 100ms jitter.
+        // Reset when the live sum drops (file finished/unregistered).
         let speed = {
-            let mut last_bytes = self.last_bytes.lock().unwrap();
-            let mut last_ts = self.last_ts.lock().unwrap();
-            let delta_bytes = sum_bytes.saturating_sub(*last_bytes);
-            let delta_secs = now.duration_since(*last_ts).as_secs_f64().max(0.001);
-            *last_bytes = sum_bytes;
-            *last_ts = now;
-            delta_bytes as f64 / delta_secs
+            let mut samples = self.speed_samples.lock().unwrap();
+            if samples
+                .back()
+                .is_some_and(|(_, prev)| sum_bytes < *prev)
+            {
+                samples.clear();
+            }
+            samples.push_back((now, sum_bytes));
+            let cutoff = now.checked_sub(SPEED_WINDOW).unwrap_or(now);
+            while samples
+                .front()
+                .is_some_and(|(ts, _)| *ts < cutoff)
+            {
+                // Keep at least two samples so the window always has a baseline.
+                if samples.len() <= 2 {
+                    break;
+                }
+                samples.pop_front();
+            }
+            match (samples.front(), samples.back()) {
+                (Some((t0, b0)), Some((t1, b1))) if t1 > t0 && b1 >= b0 => {
+                    let secs = t1.duration_since(*t0).as_secs_f64().max(0.001);
+                    (b1 - b0) as f64 / secs
+                }
+                _ => 0.0,
+            }
         };
 
         let total = self.total_items.load(Ordering::Relaxed) as usize;
