@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-07-18
+
+### Changed
+- **Renamed to Polariseq**: Project rebranded from **EBIDownload** to **Polariseq** (`Polaris` + `seq`). The name is inspired by the night sky and Polaris (the North Star) — a guide for navigating vast sequencing data from ENA, NCBI SRA, GEO, and public reference databases.
+- **Binary & crates**: CLI binary is now `polariseq`; crates are `polariseq-core`, `polariseq-cli`, and `polariseq` (GUI).
+- **Config paths**: Default config is `polariseq.yaml` (beside the executable or under `~/.polariseq/`); managed deps live under `~/.local/share/polariseq/`.
+- **Environment variable**: Progress API key env var is now `POLARISEQ_PROGRESS_KEY` (was `EBIDOWNLOAD_PROGRESS_KEY`).
+- **Repository**: GitHub repository renamed to [xsx123123/polariseq](https://github.com/xsx123123/polariseq).
+- **CLI banner**: Polariseq ASCII logo with centered star-themed tagline.
+- **S3 resume fix**: Incomplete preallocated downloads no longer trigger early MD5 wipe of `.meta.json`.
+- **Default chunk size**: Raised to **200 MiB** for faster large-file transfers.
+- **Status-bar speed**: 3-second sliding-window average for a more stable aggregate rate.
+- **Log UI**: Removed emoji prefixes from log lines; status bar styling kept.
+
+### Migration
+| Old | New |
+|-----|-----|
+| `EBIDownload` binary | `polariseq` |
+| `EBIDownload.yaml` / `~/.EBIDownload/` | `polariseq.yaml` / `~/.polariseq/` |
+| `~/.local/share/EBIDownload/` | `~/.local/share/polariseq/` |
+| `EBIDOWNLOAD_PROGRESS_KEY` | `POLARISEQ_PROGRESS_KEY` |
+| github.com/xsx123123/EBIDownload | github.com/xsx123123/polariseq |
+
 ## [1.4.1] - 2026-07-16
 
 ### Added

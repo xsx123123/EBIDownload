@@ -3765,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "polariseq"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3786,7 +3786,7 @@ dependencies = [
 
 [[package]]
 name = "polariseq-cli"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3812,7 +3812,7 @@ dependencies = [
 
 [[package]]
 name = "polariseq-core"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "anyhow",
  "aws-config",

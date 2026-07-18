@@ -1,13 +1,37 @@
 
 [中文文档](./docs/README_zh.md) | English
 
+> **“We are made of star-stuff.”**
+>
+> We are only borrowing these atoms from the universe, for a brief experience of this world.
+> We are only borrowing these carbon, hydrogen, and oxygen atoms from the universe for a few decades, using them to briefly experience this world once.
+> Every atom that makes up our brains and bodies was forged in the nuclear fusion of ancient stars billions of years ago.
+> When life ends, we do not fade into nothing — we simply return to that vast cosmos, and continue to exist in another form.
+>
+> **「我们由星尘构成。」**
+>
+> 我们只是借用了宇宙中的这些原子，短暂地体验了一次这个世界。
+> 我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。
+> 组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。
+> 当生命结束时，我们并没有化为虚无，我们只是回到了那个浩瀚的宇宙中，换了一种方式继续存在。
+
 # Polariseq
+
+> **Formerly EBIDownload.** Renamed to **Polariseq** (*Polaris* + *seq*) — inspired by the night sky and the North Star, a guide for navigating vast sequencing data.
 
 Polariseq is a Rust-based toolkit for efficiently downloading and uploading sequencing data from the European Bioinformatics Institute (EBI), NCBI SRA, and GEO (Gene Expression Omnibus). It provides both a **command-line interface (CLI)** and a **cross-platform desktop GUI** (powered by Tauri), making it accessible to both bioinformatics engineers and wet-lab researchers.
 
 For GEO datasets, simply obtain the associated **BioProject ID** (e.g., `PRJNAxxxxxx`) and pass it to Polariseq to fetch the underlying sequencing data at high speed.
 
 By default, Polariseq utilizes **AWS S3 global acceleration** to achieve ultra-fast download speeds (comparable to IDM/Aspera). **It is capable of downloading 2TB of data from the SRA database to local storage within 24 hours**, while providing full support for **resumable downloads** and **MD5 integrity verification**. It also uses Rust-native parallel gzip compression (via the [`gzp`](https://crates.io/crates/gzp) crate with the `libdeflate` backend), eliminating the need to install external compression tools.
+
+## What's New in v1.4.2
+
+- **Renamed to Polariseq** (formerly **EBIDownload**): *Polaris* (North Star) + *seq* — a star-inspired name for a toolkit that helps you navigate sequencing data across ENA, SRA, GEO, and public S3 databases.
+- **New binary / paths**: CLI is `polariseq`; config `polariseq.yaml` / `~/.polariseq/`; env `POLARISEQ_PROGRESS_KEY`; repo [xsx123123/polariseq](https://github.com/xsx123123/polariseq).
+- **S3 resume fix**: Incomplete downloads with `.meta.json` no longer get wiped by an early MD5 check on preallocated full-size files.
+- **Faster defaults**: Default `--chunk-size` raised to **200 MiB**; status-bar speed uses a 3s sliding-window average.
+- **CLI polish**: Polariseq banner, shorter global help text, emoji-free log lines.
 
 ## What's New in v1.4.1
 
@@ -901,7 +925,7 @@ md5sum -c md5.txt
 
 ---
 
-**Author**: JZHANG | **Version**: v1.4.1
+**Author**: JZHANG | **Version**: v1.4.2
 
 ## 🔗 Links
 - GitHub: [repository](https://github.com/xsx123123/polariseq)

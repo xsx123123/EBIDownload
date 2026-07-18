@@ -1,6 +1,6 @@
 [package]
 name = "polariseq"
-version = "1.4.1"
+version = "1.4.2"
 description = "Polariseq - Download sequencing data from EBI and NCBI"
 authors = ["Polariseq contributors"]
 license = "MIT"

@@ -1529,7 +1529,7 @@ function AboutTab() {
           </svg>
         </div>
         <h1>Polariseq</h1>
-        <p className="about-version">Version 1.4.1</p>
+        <p className="about-version">Version 1.4.2</p>
         <p className="about-description">
           A high-performance tool for downloading sequencing data from ENA/SRA.
           Supports multiple protocols and automatic format conversion.
@@ -1548,10 +1548,23 @@ function AboutTab() {
           </a>
         </div>
         <blockquote className="cosmic-quote">
-          “We are only borrowing these carbon, hydrogen, and oxygen atoms from the universe for a few decades,
-          using them to briefly experience this world. Every atom that makes up our brain and body comes from
-          the nuclear fusion explosions inside ancient stars billions of years ago. When life ends, we do not
-          vanish into nothingness — we simply return to the vast universe and continue to exist in another form.”
+          <p><strong>“We are made of star-stuff.”</strong></p>
+          <p>
+            We are only borrowing these atoms from the universe, for a brief experience of this world.
+            We are only borrowing these carbon, hydrogen, and oxygen atoms from the universe for a few decades,
+            using them to briefly experience this world once.
+            Every atom that makes up our brains and bodies was forged in the nuclear fusion of ancient stars
+            billions of years ago.
+            When life ends, we do not fade into nothing — we simply return to that vast cosmos, and continue
+            to exist in another form.
+          </p>
+          <p><strong>「我们由星尘构成。」</strong></p>
+          <p>
+            我们只是借用了宇宙中的这些原子，短暂地体验了一次这个世界。
+            我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。
+            组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。
+            当生命结束时，我们并没有化为虚无，我们只是回到了那个浩瀚的宇宙中，换了一种方式继续存在。
+          </p>
         </blockquote>
       </div>
 
