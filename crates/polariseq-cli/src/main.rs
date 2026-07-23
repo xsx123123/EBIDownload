@@ -1592,13 +1592,41 @@ async fn download_with_aws(
             } else {
                 info!(target: "download_detail", "[{}] Step 2: Converting (fasterq-dump)...", run_id);
 
+                let fasterq_tmp_dir = output_dir.join(".fasterq_tmp").join(&run_id);
+                tokio::fs::create_dir_all(&fasterq_tmp_dir)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to create fasterq-dump temporary directory: {}",
+                            fasterq_tmp_dir.display()
+                        )
+                    })?;
+                let fasterq_tmp_dir = tokio::fs::canonicalize(&fasterq_tmp_dir)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to resolve fasterq-dump temporary directory: {}",
+                            fasterq_tmp_dir.display()
+                        )
+                    })?;
+                let fasterq_output_dir = tokio::fs::canonicalize(&output_dir)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to resolve fasterq-dump output directory: {}",
+                            output_dir.display()
+                        )
+                    })?;
+
                 let estimated_fastq_size = sra_size * 3;
                 let mut child = Command::new(&fasterq_dump)
                     .arg("--split-3")
                     .arg("-e")
                     .arg(process_threads.to_string())
                     .arg("-O")
-                    .arg(".")
+                    .arg(&fasterq_output_dir)
+                    .arg("-t")
+                    .arg(&fasterq_tmp_dir)
                     .arg("-f")
                     .arg(&sra_filename)
                     .current_dir(&output_dir)
